@@ -8,6 +8,9 @@ module RedmineCanvasGantt
     SETTINGS_MUTEX = Mutex.new
     LoadResult = Struct.new(:snapshot, :warnings, keyword_init: true)
 
+    class SnapshotNotFound < StandardError; end
+    class SnapshotConflict < StandardError; end
+
     def initialize(settings_reader: Setting, current_user_class: User)
       @settings_reader = settings_reader
       @current_user_class = current_user_class
@@ -35,6 +38,30 @@ module RedmineCanvasGantt
         write_plugin_settings(settings.merge(STORAGE_KEY => snapshots))
       end
       snapshot
+    end
+
+    # Removes the current project snapshot only when it is still the snapshot
+    # the caller observed. This prevents a stale client from deleting a newer
+    # baseline saved by another user.
+    def delete(project_id:, expected_snapshot_id:)
+      deleted_snapshot_id = nil
+
+      synchronize_settings do
+        settings = @locked_setting ? @plugin_settings : plugin_settings(refresh: true)
+        snapshots = normalize_snapshots(settings[STORAGE_KEY])
+        raw_snapshot = snapshots[project_id.to_s]
+        raise SnapshotNotFound if raw_snapshot.blank?
+
+        current_snapshot_id = raw_snapshot['snapshot_id'] || raw_snapshot[:snapshot_id]
+        raise SnapshotNotFound if current_snapshot_id.blank?
+        raise SnapshotConflict unless current_snapshot_id.to_s == expected_snapshot_id.to_s
+
+        snapshots.delete(project_id.to_s)
+        write_plugin_settings(settings.merge(STORAGE_KEY => snapshots))
+        deleted_snapshot_id = current_snapshot_id.to_s
+      end
+
+      deleted_snapshot_id
     end
 
     def build_snapshot(project:, issues:, current_user:, snapshot_id: SecureRandom.uuid, captured_at: Time.now.utc, scope: 'filtered')

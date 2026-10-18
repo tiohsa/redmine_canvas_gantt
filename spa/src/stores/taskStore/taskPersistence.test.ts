@@ -27,6 +27,51 @@ const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean
 );
 
 describe('saveModifiedTasks', () => {
+    it('retains successful writes and reports unresolved local work when conflict resync is superseded', async () => {
+        const saved = buildTask({ id: 'saved', subject: 'saved locally' });
+        const conflicted = buildTask({ id: 'conflicted', subject: 'local intent' });
+        const updateTask = vi.fn(async (task: Task) => task.id === 'saved'
+            ? { status: 'ok' as const, lockVersion: 2, entity: { id: task.id, subject: task.subject, lockVersion: 2 } }
+            : { status: 'conflict' as const, error: 'stale revision' });
+        const fetchData = vi.fn(async () => {
+            throw Object.assign(new Error('Superseded mutation resync'), { name: 'SupersededMutationResyncError' });
+        });
+        const onConflict = vi.fn();
+
+        const result = await saveModifiedTasks(
+            [saved, conflicted], [], new Set([saved.id, conflicted.id]), [], updateTask, fetchData,
+            undefined, undefined, onConflict, undefined, undefined,
+            { saved: { subject: 'saved locally' }, conflicted: { subject: 'local intent' } }
+        );
+
+        expect(result.savedTaskIds).toEqual(new Set(['saved']));
+        expect(result.failures.get('conflicted')).toBe('stale revision');
+        expect(result.resyncSupersededTaskIds).toEqual(new Set(['conflicted']));
+        expect(result.batchStatus).toBe('partial_failure');
+        expect(onConflict).toHaveBeenCalledWith('conflicted', 'stale revision', undefined, undefined);
+    });
+
+    it('keeps unrelated validation failures reportable when another conflict resync is cancelled', async () => {
+        const forbidden = buildTask({ id: 'forbidden' });
+        const conflicted = buildTask({ id: 'conflicted' });
+        const updateTask = vi.fn(async (task: Task) => task.id === forbidden.id
+            ? { status: 'forbidden' as const, error: 'permission denied' }
+            : { status: 'conflict' as const, error: 'stale revision' });
+        const fetchData = vi.fn(async () => {
+            throw Object.assign(new Error('Superseded mutation resync'), { name: 'SupersededMutationResyncError' });
+        });
+
+        const result = await saveModifiedTasks(
+            [forbidden, conflicted], [], new Set([forbidden.id, conflicted.id]), [], updateTask, fetchData,
+            undefined, undefined, undefined, undefined, undefined,
+            { forbidden: { subject: 'forbidden' }, conflicted: { subject: 'conflicted' } }
+        );
+
+        expect(result.failures.get(forbidden.id)).toBe('permission denied');
+        expect(result.failures.get(conflicted.id)).toBe('stale revision');
+        expect(result.resyncSupersededTaskIds).toEqual(new Set([conflicted.id]));
+    });
+
     it('keeps the schedule mutation mode through a response-loss retry', async () => {
         const task = buildTask({ id: 'retry-mode', dueDate: 11, lockVersion: 1 });
         const scheduleMutation = vi.fn()

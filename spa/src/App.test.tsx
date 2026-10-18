@@ -66,6 +66,20 @@ describe('App store subscriptions', () => {
         expect(toolbarRenderMock).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps fullscreen active when Escape is pressed while an alertdialog is modal', () => {
+        useUIStore.getState().setFullScreen(true);
+        render(<App />);
+        const alertDialog = document.createElement('div');
+        alertDialog.setAttribute('role', 'alertdialog');
+        alertDialog.setAttribute('aria-modal', 'true');
+        document.body.append(alertDialog);
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+        expect(useUIStore.getState().isFullScreen).toBe(true);
+        alertDialog.remove();
+    });
+
     it('keeps a localized calendar warning visible and removes it after recovery', () => {
         vi.useFakeTimers();
         useTaskStore.setState({

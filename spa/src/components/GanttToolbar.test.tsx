@@ -13,6 +13,7 @@ import '../stores/preferencesWatcher';
 import { resetCanvasGanttTestState } from '../test/testSetup';
 import { setVisibleColumnsForTest } from '../test/columnTestHelpers';
 import type { CustomFieldMeta } from '../types/editMeta';
+import { taskMutationService } from '../services/taskMutationService';
 
 vi.mock('../utils/navigation', () => ({
     navigateToRedminePath: vi.fn()
@@ -23,6 +24,14 @@ vi.mock('../api/client', () => ({
         saveBaseline: vi.fn(),
         fetchData: vi.fn(),
         fetchQueries: vi.fn()
+    }
+}));
+
+vi.mock('../services/taskMutationService', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../services/taskMutationService')>(),
+    taskMutationService: {
+        ...(await importOriginal<typeof import('../services/taskMutationService')>()).taskMutationService,
+        deleteBaseline: vi.fn()
     }
 }));
 
@@ -111,6 +120,21 @@ describe('GanttToolbar shortcuts', () => {
             expect(screen.queryByPlaceholderText(/filter by subject/i)).not.toBeInTheDocument();
             expect(useTaskStore.getState().filterText).toBe('');
         });
+    });
+
+    it('does not open the background filter while an alertdialog is modal', async () => {
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        const alertDialog = document.createElement('div');
+        alertDialog.setAttribute('role', 'alertdialog');
+        alertDialog.setAttribute('aria-modal', 'true');
+        document.body.append(alertDialog);
+        try {
+            fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+            await act(async () => new Promise((resolve) => window.requestAnimationFrame(() => resolve(undefined))));
+            expect(screen.queryByPlaceholderText(/filter by subject/i)).not.toBeInTheDocument();
+        } finally {
+            alertDialog.remove();
+        }
     });
 
     it('shows names beside header icons from saved queries through chart settings', () => {
@@ -351,6 +375,166 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
         fireEvent.click(screen.getByRole('checkbox', { name: 'Show baseline comparison' }));
         expect(useUIStore.getState().showBaseline).toBe(true);
+    });
+
+    it('preserves a newer baseline applied while the confirmed DELETE is pending', async () => {
+        const originalSnapshot = {
+            snapshotId: 'baseline-1', projectId: '1', capturedAt: '2026-04-01T00:00:00.000Z',
+            capturedById: 1, capturedByName: 'Alice', scope: 'project' as const, tasksByIssueId: {}
+        };
+        const newerSnapshot = { ...originalSnapshot, snapshotId: 'baseline-2', capturedByName: 'Bob' };
+        let finishDelete!: (result: Awaited<ReturnType<typeof taskMutationService.deleteBaseline>>) => void;
+        vi.mocked(taskMutationService.deleteBaseline).mockReturnValue(new Promise((resolve) => { finishDelete = resolve; }));
+        useTaskStore.setState({ permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useBaselineStore.getState().setSnapshot(originalSnapshot, ['existing warning']);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+
+        await waitFor(() => expect(taskMutationService.deleteBaseline).toHaveBeenCalledWith('baseline-1'));
+        act(() => useBaselineStore.getState().setSnapshot(newerSnapshot, ['new snapshot warning']));
+        await act(async () => finishDelete({ status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1' }));
+
+        expect(useBaselineStore.getState().snapshot?.snapshotId).toBe('baseline-2');
+        expect(useBaselineStore.getState().warnings).toEqual(['new snapshot warning']);
+        expect(useBaselineStore.getState().saveStatus).toBe('ready');
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+
+    it.each([true, false])('retains baseline visibility=%s when a newer snapshot arrives during DELETE', async (showBaseline) => {
+        let finishDelete!: (result: Awaited<ReturnType<typeof taskMutationService.deleteBaseline>>) => void;
+        vi.mocked(taskMutationService.deleteBaseline).mockReturnValue(new Promise((resolve) => { finishDelete = resolve; }));
+        const originalSnapshot = {
+            snapshotId: 'baseline-1', projectId: '1', capturedAt: '2026-04-01T00:00:00.000Z',
+            capturedById: 1, capturedByName: 'Alice', scope: 'project' as const, tasksByIssueId: {}
+        };
+        const newerSnapshot = { ...originalSnapshot, snapshotId: 'baseline-2' };
+        useTaskStore.setState({ permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useBaselineStore.getState().setSnapshot(originalSnapshot);
+        useUIStore.getState().setShowBaseline(showBaseline);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+        await waitFor(() => expect(taskMutationService.deleteBaseline).toHaveBeenCalled());
+        act(() => useBaselineStore.getState().setSnapshot(newerSnapshot));
+        await act(async () => finishDelete({ status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1' }));
+
+        expect(useBaselineStore.getState().snapshot?.snapshotId).toBe('baseline-2');
+        expect(useUIStore.getState().showBaseline).toBe(showBaseline);
+        expect(useBaselineStore.getState().saveStatus).toBe('ready');
+    });
+
+    it('clears the baseline after successful deletion when the deleted snapshot is still current', async () => {
+        vi.mocked(taskMutationService.deleteBaseline).mockResolvedValue({
+            status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1'
+        });
+        const snapshot = {
+            snapshotId: 'baseline-1', projectId: '1', capturedAt: '2026-04-01T00:00:00.000Z',
+            capturedById: 1, capturedByName: 'Alice', scope: 'project' as const, tasksByIssueId: {}
+        };
+        useTaskStore.setState({ permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useBaselineStore.getState().setSnapshot(snapshot);
+        useUIStore.getState().setShowBaseline(true);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+
+        await waitFor(() => expect(useBaselineStore.getState().snapshot).toBeNull());
+        expect(useUIStore.getState().showBaseline).toBe(false);
+        expect(useBaselineStore.getState().saveStatus).toBe('idle');
+    });
+
+    it.each([500, 502, 504])('reconciles HTTP %s after one DELETE and clears a remotely deleted baseline', async (httpStatus) => {
+        const snapshot = {
+            snapshotId: 'baseline-1', projectId: '1', capturedAt: '2026-04-01T00:00:00.000Z',
+            capturedById: 1, capturedByName: 'Alice', scope: 'project' as const, tasksByIssueId: {}
+        };
+        useTaskStore.setState({ currentProjectId: '1', permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useBaselineStore.getState().setSnapshot(snapshot);
+        useUIStore.getState().setShowBaseline(true);
+        vi.mocked(taskMutationService.deleteBaseline).mockRejectedValue(
+            Object.assign(new Error('server failure'), { httpStatus })
+        );
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [],
+            customFields: [], project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }, baseline: null
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+
+        await waitFor(() => expect(useBaselineStore.getState().snapshot).toBeNull());
+        expect(taskMutationService.deleteBaseline).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        expect(useUIStore.getState().showBaseline).toBe(false);
+    });
+
+    it.each([
+        ['same snapshot', 'baseline-1', 'baseline-1', 'ready'],
+        ['new snapshot', 'baseline-1', 'baseline-2', 'ready']
+    ] as const)('retains or adopts the refreshed %s after an unknown DELETE outcome', async (_label, currentId, refreshedId, saveStatus) => {
+        const snapshot = {
+            snapshotId: currentId, projectId: '1', capturedAt: '2026-04-01T00:00:00.000Z',
+            capturedById: 1, capturedByName: 'Alice', scope: 'project' as const, tasksByIssueId: {}
+        };
+        const refreshed = { ...snapshot, snapshotId: refreshedId, capturedByName: 'Bob' };
+        useTaskStore.setState({ currentProjectId: '1', permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useBaselineStore.getState().setSnapshot(snapshot);
+        useUIStore.getState().setShowBaseline(true);
+        vi.mocked(taskMutationService.deleteBaseline).mockRejectedValue(
+            Object.assign(new Error('gateway failure'), { httpStatus: 502 })
+        );
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [],
+            customFields: [], project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }, baseline: refreshed
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+
+        await waitFor(() => {
+            expect(useBaselineStore.getState().snapshot).toMatchObject({ snapshotId: refreshedId, capturedByName: 'Bob' });
+            expect(useBaselineStore.getState().saveStatus).toBe('ready');
+        });
+        expect(taskMutationService.deleteBaseline).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        expect(useUIStore.getState().showBaseline).toBe(true);
+        expect(useBaselineStore.getState().saveStatus).toBe(saveStatus);
+    });
+
+    it('retains the local baseline and reports an error when 5xx reconciliation also fails', async () => {
+        const snapshot = {
+            snapshotId: 'baseline-1', projectId: '1', capturedAt: '2026-04-01T00:00:00.000Z',
+            capturedById: 1, capturedByName: 'Alice', scope: 'project' as const, tasksByIssueId: {}
+        };
+        useTaskStore.setState({ currentProjectId: '1', permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useBaselineStore.getState().setSnapshot(snapshot);
+        vi.mocked(taskMutationService.deleteBaseline).mockRejectedValue(
+            Object.assign(new Error('server failure'), { httpStatus: 504 })
+        );
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('refresh failed'));
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+
+        await waitFor(() => expect(useBaselineStore.getState().saveStatus).toBe('error'));
+        expect(useBaselineStore.getState().snapshot?.snapshotId).toBe('baseline-1');
+        expect(taskMutationService.deleteBaseline).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
     });
 
     it('keeps only the baseline visibility action for view-only users', () => {

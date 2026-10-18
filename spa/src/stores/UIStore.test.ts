@@ -87,6 +87,20 @@ describe('UIStore', () => {
         expect(useUIStore.getState().showTaskBarDates).toBe(true);
     });
 
+    it('resets issue dialog sizing to its defaults', () => {
+        useUIStore.getState().setIssueDialogWidthPx(1500);
+        useUIStore.getState().setIssueDialogHeightMode('fixed');
+        useUIStore.getState().setIssueDialogHeightPercent(90);
+
+        useUIStore.getState().resetIssueDialogSize();
+
+        expect(useUIStore.getState()).toMatchObject({
+            issueDialogWidthPx: 1200,
+            issueDialogHeightMode: 'auto',
+            issueDialogHeightPercent: 80
+        });
+    });
+
     it('toggles hierarchy line visibility', () => {
         type UIStoreState = ReturnType<typeof useUIStore.getState> & {
             showHierarchyLines: boolean;

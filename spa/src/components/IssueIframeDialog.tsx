@@ -13,12 +13,14 @@ import { canApplyReadResponse, createReadContext, type ReadContext } from '../st
 import { useTimerStore } from '../stores/TimerStore';
 import { detectTimerRecordingOutcome } from '../domain/timer/timerRecordingOutcome';
 import { classifyIssueDialogForm, type IssueDialogFormTarget } from '../utils/issueDialogForms';
+import {
+    DEFAULT_ISSUE_DIALOG_WIDTH_PX
+} from '../utils/preferences';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
 const MIN_TIME_ENTRY_DIALOG_HEIGHT_PX = 420;
-const DEFAULT_DIALOG_WIDTH_PX = 1200;
-const MIN_DIALOG_WIDTH_PX = 800;
+type DialogSizeTarget = 'issue' | 'time-entry' | 'query' | 'other';
 
 type ObserverWindow = Window & {
     ResizeObserver?: typeof ResizeObserver;
@@ -66,6 +68,27 @@ const getIssueDialogContentHeight = (doc: Document): number => {
 
 type IssueDialogMode = 'form' | 'saving' | 'issue-show' | 'error';
 type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | 'query' | null;
+
+const getDialogSizeTarget = (url: string | null, saveTarget: SaveTarget, isQueryDialog: boolean): DialogSizeTarget => {
+    if (isQueryDialog) return 'query';
+    if (!url) return 'other';
+
+    try {
+        const path = new URL(url, window.location.origin).pathname;
+        if (isTimeEntryDialogUrl(url)) return 'time-entry';
+        if (/\/(?:projects\/[^/]+\/)?queries(?:\/|$)/.test(path)) return 'query';
+        if (/\/(?:projects\/[^/]+\/)?issues(?:\/|$)/.test(path) || /\/journals\/\d+(?:\/|$)/.test(path)) {
+            return 'issue';
+        }
+    } catch {
+        // A recognized Redmine form remains a useful fallback if its URL is unusual.
+    }
+
+    if (saveTarget === 'time_entry') return 'time-entry';
+    if (saveTarget === 'query') return 'query';
+    if (saveTarget === 'issue' || saveTarget === 'new-issue' || saveTarget === 'journal') return 'issue';
+    return 'other';
+};
 
 const getIssueShowIdFromPath = (path: string): string | null => {
     const issueMatch = path.match(/\/issues\/(\d+)\/?$/);
@@ -156,6 +179,9 @@ export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
     const issueDialogContext = useUIStore(state => state.issueDialogContext);
     const queryDialogUrl = useUIStore(state => state.queryDialogUrl);
+    const issueDialogWidthPx = useUIStore(state => state.issueDialogWidthPx);
+    const issueDialogHeightMode = useUIStore(state => state.issueDialogHeightMode);
+    const issueDialogHeightPercent = useUIStore(state => state.issueDialogHeightPercent);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const closeQueryDialog = useUIStore(state => state.closeQueryDialog);
     const refreshData = useTaskStore(state => state.refreshData);
@@ -178,6 +204,7 @@ export const IssueIframeDialog: React.FC = () => {
     const trackerReadContextRef = React.useRef<ReadContext | null>(null);
     const trackerReadGenerationRef = React.useRef(0);
     const saveTargetRef = React.useRef<SaveTarget>(null);
+    const currentIframeUrlRef = React.useRef<string | null>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [dialogMode, setDialogMode] = React.useState<IssueDialogMode>('form');
     const [currentIframeUrl, setCurrentIframeUrl] = React.useState<string | null>(null);
@@ -190,9 +217,22 @@ export const IssueIframeDialog: React.FC = () => {
     const [trackerOptions, setTrackerOptions] = React.useState<Array<{ id: number; name: string }>>([]);
     const [defaultTrackerId, setDefaultTrackerId] = React.useState<number | undefined>(undefined);
     const [hasBulkSubjects, setHasBulkSubjects] = React.useState(false);
+    const [viewportSize, setViewportSize] = React.useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
     const activeDialogUrl = queryDialogUrl || issueDialogUrl;
+    const activeDialogUrlRef = React.useRef(activeDialogUrl);
+    activeDialogUrlRef.current = activeDialogUrl;
     const effectiveDialogUrl = currentIframeUrl ?? activeDialogUrl;
     const isQueryDialog = Boolean(queryDialogUrl);
+    const dialogSizeTarget = getDialogSizeTarget(currentIframeUrl ?? activeDialogUrl, saveTarget, isQueryDialog);
+    const maxDialogHeightPx = Math.floor(viewportSize.height * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
+    const fixedIssueHeight = dialogSizeTarget === 'issue' && issueDialogHeightMode === 'fixed';
+    const configuredDialogHeightPx = fixedIssueHeight
+        ? Math.min(maxDialogHeightPx, Math.max(MIN_TIME_ENTRY_DIALOG_HEIGHT_PX, Math.floor(viewportSize.height * issueDialogHeightPercent / 100)))
+        : null;
+    const effectiveDialogWidthPx = Math.min(
+        dialogSizeTarget === 'issue' ? issueDialogWidthPx : DEFAULT_ISSUE_DIALOG_WIDTH_PX,
+        viewportSize.width * 0.98
+    );
 
     const handleClose = React.useCallback(() => {
         const timerRecording = issueDialogContext?.timerRecording;
@@ -215,12 +255,26 @@ export const IssueIframeDialog: React.FC = () => {
 
     const measureDialogHeight = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
-        if (!doc) {
-            setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
+        const currentSaveTarget = saveTargetRef.current;
+        const currentUrl = currentIframeUrlRef.current ?? activeDialogUrlRef.current;
+        const sizeTarget = getDialogSizeTarget(currentUrl, currentSaveTarget, Boolean(useUIStore.getState().queryDialogUrl));
+        const { issueDialogHeightMode: heightMode, issueDialogHeightPercent: heightPercent } = useUIStore.getState();
+        const maxHeightPx = Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
+
+        if (sizeTarget === 'issue' && heightMode === 'fixed') {
+            const fixedHeightPx = Math.min(
+                maxHeightPx,
+                Math.max(MIN_TIME_ENTRY_DIALOG_HEIGHT_PX, Math.floor(window.innerHeight * heightPercent / 100))
+            );
+            setDialogHeightPx((previous) => previous === fixedHeightPx ? previous : fixedHeightPx);
             return;
         }
 
-        const maxHeightPx = Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
+        if (!doc) {
+            setDialogHeightPx((previous) => previous === maxHeightPx ? previous : maxHeightPx);
+            return;
+        }
+
         const chromeHeight =
             getElementOuterHeight(headerRef.current) +
             getElementOuterHeight(errorRef.current) +
@@ -230,19 +284,22 @@ export const IssueIframeDialog: React.FC = () => {
         // Redmine's standard time-entry form is intentionally compact. Keep
         // its dialog from inheriting the larger issue-editor minimum height,
         // which otherwise leaves a large blank area below the form.
-        const isTimeEntry = saveTargetRef.current === 'time_entry' || isTimeEntryDialogUrl(activeDialogUrl);
+        const isTimeEntry = sizeTarget === 'time-entry';
         const minimumHeightPx = isTimeEntry ? MIN_TIME_ENTRY_DIALOG_HEIGHT_PX : MIN_DIALOG_HEIGHT_PX;
         const nextHeight = Math.min(
             maxHeightPx,
             Math.max(minimumHeightPx, chromeHeight + iframeContentHeight)
         );
 
-        setDialogHeightPx(nextHeight);
-    }, [activeDialogUrl]);
+        setDialogHeightPx((previous) => previous === nextHeight ? previous : nextHeight);
+    }, []);
 
     const detectSaveTarget = React.useCallback((doc: Document, currentPath?: string) => {
         const activeSaveForm = getActiveSaveForm(doc, currentPath);
         const nextSaveTarget = activeSaveForm?.target ?? null;
+        if (!isSavingRef.current || nextSaveTarget) {
+            saveTargetRef.current = nextSaveTarget;
+        }
         setSaveTarget(nextSaveTarget);
         setIsJournalEditing(nextSaveTarget === 'journal');
     }, []);
@@ -372,6 +429,7 @@ export const IssueIframeDialog: React.FC = () => {
             setIsIframeLoaded(true);
 
             const currentUrl = iframe.contentWindow?.location.href || '';
+            currentIframeUrlRef.current = currentUrl || null;
             setCurrentIframeUrl(currentUrl || null);
             const urlParsed = new URL(currentUrl, window.location.origin);
             const isIssueShowPage = !isQueryDialog && Boolean(getIssueShowIdFromPath(urlParsed.pathname));
@@ -410,6 +468,7 @@ export const IssueIframeDialog: React.FC = () => {
             }
 
             const loadedUrl = iframeWindow?.location.href || '';
+            currentIframeUrlRef.current = loadedUrl || null;
             setCurrentIframeUrl(loadedUrl || null);
 
             const error = getIssueDialogErrorMessage(doc);
@@ -654,6 +713,7 @@ export const IssueIframeDialog: React.FC = () => {
         setDialogMode('saving');
         setIsSaving(true);
         setIframeError(null);
+        currentIframeUrlRef.current = editUrl;
         iframeRef.current.contentWindow.location.href = editUrl;
         setCurrentIframeUrl(editUrl);
     }, [displayedIssueId, hasBulkSubjects]);
@@ -766,6 +826,7 @@ export const IssueIframeDialog: React.FC = () => {
         setSaveTarget(null);
         setIsJournalEditing(false);
         saveTargetRef.current = null;
+        currentIframeUrlRef.current = activeDialogUrl;
         isSavingRef.current = false;
         timerSubmissionPendingRef.current = false;
         timerSubmissionPromiseRef.current = null;
@@ -819,6 +880,11 @@ export const IssueIframeDialog: React.FC = () => {
         }
 
         const handleResize = () => {
+            setViewportSize((previous) => (
+                previous.width === window.innerWidth && previous.height === window.innerHeight
+                    ? previous
+                    : { width: window.innerWidth, height: window.innerHeight }
+            ));
             measureDialogHeight();
         };
 
@@ -838,13 +904,13 @@ export const IssueIframeDialog: React.FC = () => {
             resizeObserver?.disconnect();
         };
 
-        measureDialogHeight();
+        handleResize();
 
         return () => {
             dialogResizeCleanupRef.current?.();
             dialogResizeCleanupRef.current = null;
         };
-    }, [activeDialogUrl, iframeError, measureDialogHeight]);
+    }, [activeDialogUrl, iframeError, issueDialogHeightMode, issueDialogHeightPercent, measureDialogHeight]);
 
     if (!activeDialogUrl) return null;
 
@@ -899,12 +965,15 @@ export const IssueIframeDialog: React.FC = () => {
             }}
         >
             <div
+                data-testid="issue-dialog-panel"
+                data-dialog-size-target={dialogSizeTarget}
                 style={{
-                    width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
+                    width: `${effectiveDialogWidthPx}px`,
                     maxWidth: '98vw',
-                    minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
-                    height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                    maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    minWidth: 0,
+                    height: `${configuredDialogHeightPx ?? dialogHeightPx ?? Math.floor(viewportSize.height * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    maxHeight: `${maxDialogHeightPx}px`,
+                    minHeight: 0,
                     backgroundColor: '#ffffff',
                     borderRadius: '13px',
                     boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',

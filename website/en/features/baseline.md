@@ -2,6 +2,10 @@
 
 A baseline is a schedule snapshot for comparison. It is not used for scheduling or critical-path calculations.
 
+::: warning Development addition — not included in v0.18.0
+Development HEAD adds an option to delete the project's saved baseline from the **Save Baseline** menu. The confirmation dialog shows the snapshot's save time, saver, and scope. Deletion requires `manage_canvas_gantt_baseline`; the existing `view_canvas_gantt` permission is also required to use Canvas Gantt. Confirming irreversibly removes the project's entire saved snapshot, including when it was captured from a filtered view; the current filter does not limit deletion. Issues and their current dates are unchanged. If another user has replaced the snapshot, the stale deletion is rejected and the latest baseline is refreshed. If the request outcome is unknown, the client refreshes the baseline state and does not automatically retry deletion.
+:::
+
 ## Save a baseline
 
 <a id="note"></a>

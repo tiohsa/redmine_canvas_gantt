@@ -127,6 +127,18 @@ describe('mutation outcome classification', () => {
         });
     });
 
+    it('classifies a validated baseline deletion as success while keeping null save results terminal', () => {
+        expect(classifyMutationResult({
+            status: 'ok',
+            completeness: 'complete',
+            baseline: null,
+            deletedSnapshotId: 'snapshot-1'
+        })).toMatchObject({ kind: 'success', status: 'ok' });
+        expect(classifyMutationResult({ status: 'ok', baseline: null })).toMatchObject({
+            kind: 'terminal', status: 'ok'
+        });
+    });
+
     it('preserves semantic target/reference failure metadata', () => {
         expect(classifyMutationResult({
             status: 'not_found',

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { BaselineSnapshot } from '../types/baseline';
 
-type BaselineSaveStatus = 'idle' | 'saving' | 'ready' | 'error';
+type BaselineSaveStatus = 'idle' | 'saving' | 'deleting' | 'ready' | 'error';
 
 interface BaselineState {
     snapshot: BaselineSnapshot | null;
@@ -22,12 +22,14 @@ export const useBaselineStore = create<BaselineState>((set) => ({
     saveStatus: 'idle',
     warnings: [],
     lastError: null,
-    setSnapshot: (snapshot, warnings = []) => set(() => ({
+    setSnapshot: (snapshot, warnings = []) => set((state) => ({
         snapshot,
         hasBaseline: Boolean(snapshot),
         warnings,
         lastError: null,
-        saveStatus: snapshot ? 'ready' : 'idle'
+        saveStatus: state.saveStatus === 'saving' || state.saveStatus === 'deleting'
+            ? state.saveStatus
+            : snapshot ? 'ready' : 'idle'
     })),
     setSaveStatus: (status) => set(() => ({ saveStatus: status })),
     setWarnings: (warnings) => set(() => ({ warnings })),

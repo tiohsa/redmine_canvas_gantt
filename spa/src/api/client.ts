@@ -133,6 +133,12 @@ interface BaselineSaveResult extends MutationMetadata {
     error?: string;
 }
 
+interface BaselineDeleteResult extends MutationMetadata {
+    status: 'ok';
+    baseline: null;
+    deletedSnapshotId: string;
+}
+
 export type MutationStatus = MutationStatusValue;
 
 export class ApiMutationError extends Error {
@@ -1021,6 +1027,31 @@ export const apiClient = {
             ...parseMutationMetadata(root),
             baseline: baselinePayload.snapshot,
             warnings: [...warnings, ...baselinePayload.warnings]
+        };
+    },
+
+    deleteBaseline: async (snapshotId: string, apiBase?: string): Promise<BaselineDeleteResult> => {
+        const config = getConfig();
+        const url = new URL(`${apiBase ?? config.apiBase}/baseline.json`, window.location.origin).toString();
+        const response = await sessionFetch(url, {
+            method: 'DELETE',
+            headers: buildJsonHeaders(config, true),
+            body: JSON.stringify({ snapshot_id: snapshotId })
+        });
+
+        if (!response.ok) throw await parseMutationError(response);
+
+        const root = asRecord(await response.json());
+        const deletedSnapshotId = root?.deleted_snapshot_id;
+        if (root?.status !== 'ok' || root.completeness !== 'complete' || root.baseline !== null || deletedSnapshotId !== snapshotId) {
+            throw new ApiMutationError('protocol_error', 'Invalid baseline delete response', response.status);
+        }
+
+        return {
+            status: 'ok',
+            baseline: null,
+            deletedSnapshotId,
+            ...parseMutationMetadata(root)
         };
     },
 

@@ -270,6 +270,19 @@ export const taskMutationService = {
         );
     },
 
+    deleteBaseline: (snapshotId: string) => {
+        // Capture the endpoint while enqueuing so a later view/config change
+        // cannot redirect the queued request to another project's baseline.
+        const apiBase = window.RedmineCanvasGantt?.apiBase;
+        const projectId = window.RedmineCanvasGantt?.projectId ?? 'unknown';
+        return enqueueMutationOperation(
+            ['baseline:delete'],
+            () => apiClient.deleteBaseline(snapshotId, apiBase),
+            undefined,
+            [baselineProjectResourceKey(projectId)]
+        );
+    },
+
     updateTaskFields: (
         taskId: string,
         fields: TaskFieldsFactory,

@@ -22,6 +22,10 @@ import {
     type TaskFields
 } from '../../services/taskMutationService';
 
+const isSupersededMutationResyncError = (error: unknown): boolean => (
+    error instanceof Error && error.name === 'SupersededMutationResyncError'
+);
+
 export type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus | 'error';
     error?: string;
@@ -35,6 +39,7 @@ export type SaveModifiedTasksResult = {
     unsentTaskIds: Set<string>;
     abortedTaskIds: Set<string>;
     settledFieldsByTask: Map<string, Set<string>>;
+    resyncSupersededTaskIds?: Set<string>;
     batchStatus: 'completed' | 'partial_failure' | 'preflight_failure';
 };
 
@@ -362,6 +367,7 @@ export const saveModifiedTasks = async (
     const scheduleConflictEntities = new Map<string, PersistedTaskState | undefined>();
     const scheduleConflictRevisions = new Map<string, number | undefined>();
     const scheduleConflictTaskIds = new Set<string>();
+    const resyncSupersededTaskIds = new Set<string>();
     const settledFieldsByTask = new Map<string, Set<string>>();
     const addSettledFields = (taskId: string, fields: Iterable<string>) => {
         const current = settledFieldsByTask.get(taskId) ?? new Set<string>();
@@ -392,7 +398,12 @@ export const saveModifiedTasks = async (
                 resyncedTasks = (await fetchData({ query: { selectedStatusIds } })).tasks;
             } catch (resyncError) {
                 const resyncMessage = resyncError instanceof Error ? resyncError.message : transportMessage;
-                scheduleResult = { status: 'transient_error', errors: [resyncMessage] };
+                // If only the follow-up read was cancelled, retain the original
+                // schedule transport failure as the actionable outcome.
+                scheduleResult = {
+                    status: 'transient_error',
+                    errors: [isSupersededMutationResyncError(resyncError) ? transportMessage : resyncMessage]
+                };
             }
 
             if (resyncedTasks) {
@@ -834,6 +845,18 @@ export const saveModifiedTasks = async (
             try {
                 latest = await fetchData({ query: { selectedStatusIds } });
             } catch (error) {
+                if (isSupersededMutationResyncError(error)) {
+                    [...new Set(conflictTaskIds)].forEach((taskId) => {
+                        resyncSupersededTaskIds.add(taskId);
+                        pendingTaskIds.delete(taskId);
+                        terminalFailureTaskIds.add(taskId);
+                        const message = conflictMessages.get(taskId) || conflictMessage;
+                        failures.set(taskId, message);
+                        onConflict?.(taskId, message, undefined, undefined);
+                    });
+                    hasProcessedTask = true;
+                    break;
+                }
                 const message = error instanceof Error ? error.message : unknownErrorMessage;
                 [...new Set(conflictTaskIds)].forEach((taskId) => {
                     pendingTaskIds.delete(taskId);
@@ -904,6 +927,7 @@ export const saveModifiedTasks = async (
         unsentTaskIds,
         abortedTaskIds,
         settledFieldsByTask,
+        ...(resyncSupersededTaskIds.size > 0 ? { resyncSupersededTaskIds } : {}),
         batchStatus: failures.size > 0 ? 'partial_failure' : 'completed'
     };
 };

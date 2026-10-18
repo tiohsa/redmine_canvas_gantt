@@ -228,6 +228,31 @@ describe('taskMutationService mutation boundary', () => {
         expect(record).toMatchObject({ status: 'failed', outcome: 'terminal' });
     });
 
+    it('serializes baseline deletion and save through the same project resource key', async () => {
+        window.RedmineCanvasGantt = { projectId: 23, apiBase: '/projects/23/canvas_gantt', redmineBase: '', authToken: 'token' };
+        let resolveDeletion!: (value: Awaited<ReturnType<typeof apiClient.deleteBaseline>>) => void;
+        const deletion = new Promise<Awaited<ReturnType<typeof apiClient.deleteBaseline>>>((resolve) => { resolveDeletion = resolve; });
+        const deleteBaseline = vi.spyOn(apiClient, 'deleteBaseline').mockReturnValue(deletion);
+        const saveBaseline = vi.spyOn(apiClient, 'saveBaseline').mockResolvedValue({
+            status: 'ok',
+            baseline: {
+                snapshotId: 'snapshot-2', projectId: '23', capturedAt: '2026-10-17T00:00:00.000Z',
+                scope: 'project', tasksByIssueId: {}
+            }
+        });
+
+        const deleteOperation = taskMutationService.deleteBaseline('snapshot-1');
+        const saveOperation = taskMutationService.saveBaseline({ scope: 'project' });
+        await vi.waitFor(() => expect(deleteBaseline).toHaveBeenCalledWith('snapshot-1', '/projects/23/canvas_gantt'));
+        expect(saveBaseline).not.toHaveBeenCalled();
+
+        resolveDeletion({
+            status: 'ok', completeness: 'complete', baseline: null, deletedSnapshotId: 'snapshot-1'
+        });
+        await Promise.all([deleteOperation, saveOperation]);
+        expect(saveBaseline).toHaveBeenCalledTimes(1);
+    });
+
     it('records resolved baseline responses without snapshots as failed domain operations', async () => {
         vi.spyOn(apiClient, 'saveBaseline').mockResolvedValue({
             status: 'ok',

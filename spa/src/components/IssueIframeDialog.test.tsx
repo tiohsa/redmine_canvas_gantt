@@ -19,9 +19,18 @@ vi.mock('../utils/iframeStyles', () => ({
 }));
 
 class ResizeObserverMock {
+    static instances: ResizeObserverMock[] = [];
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+        ResizeObserverMock.instances.push(this);
+    }
     observe() {}
     unobserve() {}
-    disconnect() {}
+    disconnect = vi.fn();
+    trigger() {
+        this.callback([], this as unknown as ResizeObserver);
+    }
 }
 
 const setElementHeight = (element: HTMLElement, height: number) => {
@@ -56,9 +65,17 @@ const setElementHeight = (element: HTMLElement, height: number) => {
 describe('IssueIframeDialog', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        ResizeObserverMock.instances = [];
         window.localStorage.clear();
         window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
-        useUIStore.setState({ issueDialogUrl: '/issues/123/edit', issueDialogContext: null, queryDialogUrl: null });
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/edit',
+            issueDialogContext: null,
+            queryDialogUrl: null,
+            issueDialogWidthPx: 1200,
+            issueDialogHeightMode: 'auto',
+            issueDialogHeightPercent: 80
+        });
         useTimerStore.setState({ session: null });
         useTaskStore.setState({ refreshData: vi.fn() as unknown as RefreshData });
         vi.mocked(applyIssueDialogStyles).mockReset();
@@ -169,6 +186,93 @@ describe('IssueIframeDialog', () => {
         expect(footerButtons[1].style.height).toBe('28px');
         expect(footerButtons[0].style.minWidth).toBe('88px');
         expect(footerButtons[1].style.minWidth).toBe('88px');
+    });
+
+    it('applies the configured issue width and clamps it to a narrow viewport', () => {
+        const originalWidth = window.innerWidth;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 });
+        useUIStore.setState({ issueDialogWidthPx: 900 });
+        const { unmount } = render(<IssueIframeDialog />);
+        expect(screen.getByTestId('issue-dialog-panel')).toHaveStyle({ width: '900px' });
+        unmount();
+
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 });
+        useUIStore.setState({ issueDialogWidthPx: 1500 });
+        const narrowRender = render(<IssueIframeDialog />);
+        expect(screen.getByTestId('issue-dialog-panel')).toHaveStyle({ width: '367.5px', minWidth: '0' });
+        narrowRender.unmount();
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+    });
+
+    it('keeps the fixed issue height when iframe content observers fire', async () => {
+        const originalHeight = window.innerHeight;
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+        useUIStore.setState({ issueDialogHeightMode: 'fixed', issueDialogHeightPercent: 80 });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('main');
+        content.id = 'content';
+        doc.body.appendChild(content);
+        setElementHeight(content, 300);
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }, configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+        fireEvent.load(iframe);
+
+        const panel = screen.getByTestId('issue-dialog-panel');
+        await waitFor(() => expect(panel.style.height).toBe('800px'));
+        setElementHeight(content, 900);
+        act(() => ResizeObserverMock.instances.forEach((observer) => observer.trigger()));
+        expect(panel.style.height).toBe('800px');
+
+        act(() => useUIStore.getState().setIssueDialogHeightMode('auto'));
+        await waitFor(() => expect(Number.parseInt(panel.style.height, 10)).toBeGreaterThan(800));
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight });
+    });
+
+    it('uses the current iframe URL to switch size targets in both navigation directions', () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const location = { href: 'http://example.com/issues/123/edit' };
+        Object.defineProperty(iframe, 'contentWindow', { value: { location, document: doc }, configurable: true });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+        fireEvent.load(iframe);
+        expect(screen.getByTestId('issue-dialog-panel')).toHaveAttribute('data-dialog-size-target', 'issue');
+
+        location.href = 'http://example.com/issues/123/time_entries/new';
+        fireEvent.load(iframe);
+        expect(screen.getByTestId('issue-dialog-panel')).toHaveAttribute('data-dialog-size-target', 'time-entry');
+
+        location.href = 'http://example.com/issues/123/edit';
+        fireEvent.load(iframe);
+        expect(screen.getByTestId('issue-dialog-panel')).toHaveAttribute('data-dialog-size-target', 'issue');
+    });
+
+    it('releases observers on close and uses the latest viewport when reopened', async () => {
+        const originalWidth = window.innerWidth;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }, configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+        fireEvent.load(iframe);
+        const firstObservers = [...ResizeObserverMock.instances];
+        expect(firstObservers.length).toBeGreaterThan(0);
+
+        fireEvent.keyDown(window, { key: 'Escape' });
+        await waitFor(() => expect(firstObservers.every((observer) => observer.disconnect.mock.calls.length > 0)).toBe(true));
+
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 });
+        act(() => useUIStore.getState().openIssueDialog('/issues/456/edit'));
+        expect(screen.getByTestId('issue-dialog-panel')).toHaveStyle({ width: '367.5px' });
+
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
     });
 
     it('offers bulk child creation for an issue show dialog', () => {

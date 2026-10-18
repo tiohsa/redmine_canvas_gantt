@@ -205,6 +205,40 @@ describe('DisplaySettingsControls', () => {
         expect(useTaskStore.getState().calculateCriticalPathEnabled).toBe(false);
     });
 
+    it('updates and resets the issue dialog size settings immediately', () => {
+        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
+        render(
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
+            />
+        );
+
+        expect(screen.getByTestId('issue-dialog-width-select')).toHaveValue('1200');
+        expect(screen.getByTestId('issue-dialog-height-mode-select')).toHaveValue('auto');
+        expect(screen.getByTestId('issue-dialog-height-percent-select')).toHaveValue('80');
+        expect(screen.getByTestId('issue-dialog-height-percent-select')).toBeDisabled();
+
+        fireEvent.change(screen.getByTestId('issue-dialog-width-select'), { target: { value: '900' } });
+        fireEvent.change(screen.getByTestId('issue-dialog-height-mode-select'), { target: { value: 'fixed' } });
+        fireEvent.change(screen.getByTestId('issue-dialog-height-percent-select'), { target: { value: '65' } });
+
+        expect(useUIStore.getState()).toMatchObject({
+            issueDialogWidthPx: 900,
+            issueDialogHeightMode: 'fixed',
+            issueDialogHeightPercent: 65
+        });
+        expect(screen.getByTestId('issue-dialog-height-percent-select')).toBeEnabled();
+
+        fireEvent.click(screen.getByTestId('issue-dialog-size-reset'));
+        expect(useUIStore.getState()).toMatchObject({
+            issueDialogWidthPx: 1200,
+            issueDialogHeightMode: 'auto',
+            issueDialogHeightPercent: 80
+        });
+    });
+
     it('uses the Auto Save transition action and disables the switch while enabling', () => {
         const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
         const requestAutoSaveChange = vi.fn();

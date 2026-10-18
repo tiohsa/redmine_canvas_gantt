@@ -814,6 +814,52 @@ describe('apiClient.saveBaseline', () => {
     });
 });
 
+describe('apiClient.deleteBaseline', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('sends the captured snapshot ID and accepts only the matching complete delete response', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'csrf-token'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok', completeness: 'complete', baseline: null,
+                deleted_snapshot_id: 'snapshot-1', invalidated_entity_ids: []
+            })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await expect(apiClient.deleteBaseline('snapshot-1')).resolves.toMatchObject({
+            status: 'ok', completeness: 'complete', baseline: null, deletedSnapshotId: 'snapshot-1'
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://localhost:3000/projects/1/canvas_gantt/baseline.json',
+            expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ snapshot_id: 'snapshot-1' }) })
+        );
+    });
+
+    it('rejects a successful response for a different snapshot as a protocol error', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'ok', completeness: 'complete', baseline: null, deleted_snapshot_id: 'snapshot-2' })
+        }));
+
+        await expect(apiClient.deleteBaseline('snapshot-1')).rejects.toMatchObject({
+            status: 'protocol_error', httpStatus: 200
+        });
+    });
+});
+
 describe('apiClient.deleteTask', () => {
     afterEach(() => {
         vi.restoreAllMocks();

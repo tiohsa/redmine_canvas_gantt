@@ -2,7 +2,7 @@ import React from 'react';
 
 import type { TaskStatus, ZoomLevel } from '../types';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
-import type { BaselineSaveScope } from '../types/baseline';
+import type { BaselineSaveScope, BaselineSnapshot } from '../types/baseline';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
@@ -19,6 +19,8 @@ import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
 import { DisplaySettingsControls } from './DisplaySettingsControls';
 import { BaselineControls } from './BaselineControls';
+import { BaselineDeleteConfirmation } from './BaselineDeleteConfirmation';
+import { classifyMutationError } from '../api/mutationOutcome';
 import {
     applyIndeterminateState,
     isCheckboxChecked,
@@ -82,6 +84,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
+    const [pendingDeleteSnapshot, setPendingDeleteSnapshot] = React.useState<BaselineSnapshot | null>(null);
+    const baselineDeleteOperationRef = React.useRef(0);
     const [projectSearchText, setProjectSearchText] = React.useState('');
     const resetProjectSearch = React.useCallback(() => setProjectSearchText(''), []);
     const {
@@ -217,13 +221,14 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     };
 
     const handleSaveBaseline = async (scope: BaselineSaveScope) => {
-        if (!permissions.baselineEditable || baselineSaveStatus === 'saving') {
+        const currentStatus = useBaselineStore.getState().saveStatus;
+        if (!permissions.baselineEditable || currentStatus === 'saving' || currentStatus === 'deleting') {
             return;
         }
 
         const baselineStore = useBaselineStore.getState();
-        baselineStore.setSaveStatus('saving');
         baselineStore.setLastError(null);
+        baselineStore.setSaveStatus('saving');
 
         try {
             if (modifiedTaskIds.size > 0) {
@@ -259,6 +264,111 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             const message = error instanceof Error ? error.message : (i18n.t('label_baseline_save_failed') || 'Failed to save baseline');
             baselineStore.setLastError(message);
             useUIStore.getState().addNotification(message, 'error');
+        }
+    };
+
+    const handleDeleteBaseline = () => {
+        const current = useBaselineStore.getState();
+        const projectId = window.RedmineCanvasGantt?.projectId?.toString();
+        if (!permissions.baselineEditable || !current.snapshot || current.snapshot.projectId !== projectId || current.saveStatus === 'saving' || current.saveStatus === 'deleting') return;
+        setPendingDeleteSnapshot({ ...current.snapshot });
+        closeMenu('baselineSave');
+    };
+
+    const handleConfirmBaselineDelete = async (snapshotId: string) => {
+        const projectIdAtStart = useTaskStore.getState().currentProjectId;
+        const configProjectIdAtStart = window.RedmineCanvasGantt?.projectId?.toString();
+        const current = useBaselineStore.getState();
+        if (current.saveStatus === 'saving' || current.saveStatus === 'deleting') {
+            setPendingDeleteSnapshot(null);
+            return;
+        }
+        if (!permissions.baselineEditable || projectIdAtStart !== configProjectIdAtStart || pendingDeleteSnapshot?.snapshotId !== snapshotId || pendingDeleteSnapshot?.projectId !== configProjectIdAtStart || current.snapshot?.projectId !== configProjectIdAtStart || current.snapshot?.snapshotId !== snapshotId) {
+            if (current.snapshot?.snapshotId !== snapshotId) {
+                useUIStore.getState().addNotification(i18n.t('label_baseline_updated_elsewhere') || 'The baseline was updated by another user.', 'warning');
+            }
+            setPendingDeleteSnapshot(null);
+            return;
+        }
+
+        const operationToken = ++baselineDeleteOperationRef.current;
+        current.setLastError(null);
+        current.setSaveStatus('deleting');
+        const taskStore = useTaskStore.getState();
+        const isCurrentProject = () => (
+            useTaskStore.getState().currentProjectId === projectIdAtStart &&
+            window.RedmineCanvasGantt?.projectId?.toString() === configProjectIdAtStart
+        );
+        const reconcile = async (): Promise<boolean> => {
+            taskStore.invalidateDataReads();
+            try {
+                const outcome = await useTaskStore.getState().refreshData();
+                return outcome.status === 'applied';
+            } catch {
+                return false;
+            }
+        };
+
+        try {
+            await taskMutationService.deleteBaseline(snapshotId);
+            if (!isCurrentProject()) return;
+            taskStore.invalidateDataReads();
+            const latestBaseline = useBaselineStore.getState();
+            if (latestBaseline.snapshot?.snapshotId === snapshotId) {
+                latestBaseline.setSnapshot(null);
+                useUIStore.getState().setShowBaseline(false);
+                latestBaseline.setSaveStatus('idle');
+            } else if (!latestBaseline.snapshot) {
+                useUIStore.getState().setShowBaseline(false);
+                latestBaseline.setSaveStatus('idle');
+            } else {
+                latestBaseline.setSaveStatus('ready');
+            }
+            useUIStore.getState().addNotification(i18n.t('label_baseline_deleted') || 'Baseline deleted', 'success');
+        } catch (error) {
+            if (!isCurrentProject()) return;
+            const outcome = classifyMutationError(error);
+            const errorRecord = error && typeof error === 'object' ? error as { httpStatus?: unknown } : null;
+            const isConflictOrMissing = outcome.status === 'conflict' || outcome.status === 'not_found';
+            const isUnknown = outcome.status === 'protocol_error' || typeof errorRecord?.httpStatus !== 'number' ||
+                (errorRecord.httpStatus >= 500 && errorRecord.httpStatus <= 599);
+
+            if (isConflictOrMissing || isUnknown) {
+                const refreshed = await reconcile();
+                if (!isCurrentProject()) return;
+                if (refreshed) {
+                    const currentAfterRefresh = useBaselineStore.getState();
+                    useBaselineStore.getState().setSaveStatus(currentAfterRefresh.hasBaseline ? 'ready' : 'idle');
+                    if (!currentAfterRefresh.hasBaseline) {
+                        useUIStore.getState().setShowBaseline(false);
+                    }
+                    if (outcome.status !== 'conflict' && !currentAfterRefresh.hasBaseline) {
+                        useUIStore.getState().addNotification(i18n.t('label_baseline_deleted') || 'Baseline deleted', 'success');
+                    } else {
+                        useUIStore.getState().addNotification(
+                            isConflictOrMissing
+                                ? (i18n.t('label_baseline_updated_elsewhere') || 'The baseline was updated by another user.')
+                                : (i18n.t('label_baseline_delete_unknown') || 'Could not confirm whether the baseline was deleted.'),
+                            isConflictOrMissing ? 'warning' : 'error'
+                        );
+                    }
+                } else {
+                    useBaselineStore.getState().setLastError(i18n.t('label_baseline_delete_unknown') || 'Could not confirm whether the baseline was deleted.');
+                    useUIStore.getState().addNotification(i18n.t('label_baseline_delete_unknown') || 'Could not confirm whether the baseline was deleted.', 'error');
+                }
+            } else {
+                const message = error instanceof Error
+                    ? error.message
+                    : (i18n.t('label_baseline_delete_failed') || 'Failed to delete baseline.');
+                useBaselineStore.getState().setLastError(message);
+                useUIStore.getState().addNotification(message, 'error');
+            }
+        } finally {
+            if (isCurrentProject() && baselineDeleteOperationRef.current === operationToken && useBaselineStore.getState().saveStatus === 'deleting') {
+                const latest = useBaselineStore.getState();
+                latest.setSaveStatus(latest.hasBaseline ? 'ready' : 'idle');
+            }
+            if (baselineDeleteOperationRef.current === operationToken) setPendingDeleteSnapshot(null);
         }
     };
 
@@ -1967,8 +2077,16 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     showBaselineSaveMenu={showBaselineSaveMenu}
                     onToggleSaveMenu={() => toggleMenu('baselineSave')}
                     onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
+                    onDeleteBaseline={handleDeleteBaseline}
                     onToggleBaseline={() => toggleBaseline()}
                 />
+                {pendingDeleteSnapshot && (
+                    <BaselineDeleteConfirmation
+                        snapshot={pendingDeleteSnapshot}
+                        onCancel={() => setPendingDeleteSnapshot(null)}
+                        onConfirm={handleConfirmBaselineDelete}
+                    />
+                )}
                 <ActionNeededControl />
 
                 {hasPendingManualChanges && (

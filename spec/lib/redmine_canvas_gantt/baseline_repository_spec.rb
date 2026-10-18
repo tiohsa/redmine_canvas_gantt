@@ -167,6 +167,129 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
         expect(stored.fetch('baseline_snapshots').fetch('1').fetch('snapshot_id'))
           .to be_in(%w[baseline-a baseline-b])
       end
+
+      it 'does not delete a replacement saved concurrently with a stale delete' do
+        original = concurrent_snapshot(1, 'baseline-original')
+        replacement = concurrent_snapshot(1, 'baseline-new')
+        described_class.new(settings_reader: Setting).replace(project_id: 1, snapshot: original)
+
+        ready = Queue.new
+        start = Queue.new
+        errors = Queue.new
+        deleter = Thread.new do
+          Setting.connection_pool.with_connection do
+            repository = described_class.new(settings_reader: Setting)
+            ready << true
+            start.pop
+            repository.delete(project_id: 1, expected_snapshot_id: 'baseline-original')
+          end
+        rescue described_class::SnapshotConflict
+          # The save acquired the row lock first; retaining the new snapshot is
+          # the expected compare-and-delete outcome.
+        rescue StandardError => error
+          errors << error
+        end
+        saver = Thread.new do
+          Setting.connection_pool.with_connection do
+            repository = described_class.new(settings_reader: Setting)
+            ready << true
+            start.pop
+            repository.replace(project_id: 1, snapshot: replacement)
+          end
+        rescue StandardError => error
+          errors << error
+        end
+
+        2.times { ready.pop }
+        2.times { start << true }
+        [deleter, saver].each(&:join)
+        raise errors.pop unless errors.empty?
+
+        stored = Setting.find_by!(name: described_class::SETTING_NAME).value
+        expect(stored.dig('baseline_snapshots', '1', 'snapshot_id')).to eq('baseline-new')
+      end
+    end
+  end
+
+  describe '#delete' do
+    let(:stored_snapshot) do
+      {
+        'snapshot_id' => 'snapshot-current',
+        'project_id' => 1,
+        'captured_at' => '2026-04-01T12:00:00Z',
+        'captured_by_id' => 7,
+        'captured_by_name' => 'Alice',
+        'scope' => 'project',
+        'task_states' => []
+      }
+    end
+
+    before do
+      settings_hash['unrelated_setting'] = 'keep-me'
+      settings_hash['baseline_snapshots'] = {
+        '1' => stored_snapshot,
+        '2' => stored_snapshot.merge('project_id' => 2, 'snapshot_id' => 'other-project-snapshot')
+      }
+    end
+
+    it 'deletes only the matching project snapshot and preserves other settings' do
+      result = repository.delete(project_id: 1, expected_snapshot_id: 'snapshot-current')
+
+      expect(result).to eq('snapshot-current')
+      persisted = captured_settings.last
+      expect(persisted['unrelated_setting']).to eq('keep-me')
+      expect(persisted['baseline_snapshots']).to eq('2' => settings_hash['baseline_snapshots']['2'])
+    end
+
+    it 'raises not found when the project has no snapshot' do
+      expect do
+        repository.delete(project_id: 3, expected_snapshot_id: 'snapshot-current')
+      end.to raise_error(described_class::SnapshotNotFound)
+      expect(captured_settings).to be_empty
+    end
+
+    it 'raises conflict and keeps the newer snapshot when the expected id is stale' do
+      expect do
+        repository.delete(project_id: 1, expected_snapshot_id: 'snapshot-old')
+      end.to raise_error(described_class::SnapshotConflict)
+
+      expect(captured_settings).to be_empty
+      expect(settings_hash.dig('baseline_snapshots', '1', 'snapshot_id')).to eq('snapshot-current')
+    end
+
+    it 'preserves a replacement saved concurrently with a stale delete under the fallback lock' do
+      settings_hash['baseline_snapshots'] = { '1' => stored_snapshot }
+      saver = described_class.new(settings_reader: settings_reader)
+      deleter = described_class.new(settings_reader: settings_reader)
+      replacement = RedmineCanvasGantt::BaselineSnapshot.new(
+        snapshot_id: 'snapshot-new', project_id: 1, captured_at: Time.utc(2026, 4, 2),
+        captured_by_id: 7, captured_by_name: 'Alice', scope: 'project', task_states: []
+      )
+      ready = Queue.new
+      start = Queue.new
+      outcomes = Queue.new
+
+      threads = [
+        Thread.new do
+          ready << true
+          start.pop
+          saver.replace(project_id: 1, snapshot: replacement)
+        end,
+        Thread.new do
+          ready << true
+          start.pop
+          deleter.delete(project_id: 1, expected_snapshot_id: 'snapshot-current')
+        rescue described_class::SnapshotConflict
+          :conflict
+        end
+      ]
+      2.times { ready.pop }
+      2.times { start << true }
+      threads.each { |thread| outcomes << thread.value }
+
+      expect(settings_reader.plugin_redmine_canvas_gantt.dig('baseline_snapshots', '1', 'snapshot_id'))
+        .to eq('snapshot-new')
+      expect(outcomes.size).to eq(2)
     end
   end
 

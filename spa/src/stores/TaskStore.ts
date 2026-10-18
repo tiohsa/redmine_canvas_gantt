@@ -165,6 +165,17 @@ const invalidateDataRequests = () => {
     dataRequestGeneration += 1;
 };
 
+class SupersededMutationResyncError extends Error {
+    constructor() {
+        super('Superseded mutation resync');
+        this.name = 'SupersededMutationResyncError';
+    }
+}
+
+const isSupersededMutationResyncError = (error: unknown): boolean => (
+    error instanceof Error && error.name === 'SupersededMutationResyncError'
+);
+
 let saveChangesOperation: Promise<Map<string, string>> | null = null;
 let autoSaveEnableOperation: Promise<void> | null = null;
 let barOperationSequence = 0;
@@ -345,6 +356,7 @@ export interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<ReadApplyOutcome>;
+    invalidateDataReads: () => void;
     loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
@@ -1115,6 +1127,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     let auxiliaryReadGeneration = 0;
     let mutationResyncGeneration = 0;
     let activeReadContext: ReadContext | null = null;
+    const mutationResyncContexts = new WeakMap<ApiData, { context: ReadContext; generation: number; viewIdentity: string }>();
     let lastAppliedViewIdentity: string | null = null;
     const currentViewIdentity = () => {
         const state = get();
@@ -1223,10 +1236,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
         set({ dataReadStatus: 'loading' });
         try {
             const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
-            if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
+            if (resyncGeneration !== mutationResyncGeneration || generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
                 readLifecycleMetrics.staleResponsesRejected += 1;
-                throw new Error('Superseded mutation resync');
+                throw new SupersededMutationResyncError();
             }
+            mutationResyncContexts.set(data, { context, generation: resyncGeneration, viewIdentity: viewIdentityAtStart });
             if (currentViewIdentity() === viewIdentityAtStart &&
                 lastAppliedViewIdentity === viewIdentityAtStart && get().initialDataLoaded) {
                 set({ dataReadStatus: 'ready' });
@@ -1235,11 +1249,25 @@ export const useTaskStore = create<TaskState>((set, get) => {
             }
             return data;
         } catch (error) {
+            if (isSupersededMutationResyncError(error) || resyncGeneration !== mutationResyncGeneration || generation !== dataRequestGeneration) {
+                if (!isSupersededMutationResyncError(error)) readLifecycleMetrics.staleResponsesRejected += 1;
+                settleSupersededRead(context, viewIdentityAtStart);
+                throw new SupersededMutationResyncError();
+            }
             if (activeReadContext === context && get().dataReadStatus === 'loading') {
                 set({ dataReadStatus: 'error' });
             }
             throw error;
         }
+    };
+    const applyMutationResyncData = (data: ApiData): boolean => {
+        const resync = mutationResyncContexts.get(data);
+        if (!resync || resync.generation !== mutationResyncGeneration ||
+            resync.context.generation !== dataRequestGeneration ||
+            !canApplyReadResponse(activeReadContext, resync.context) ||
+            currentViewIdentity() !== resync.viewIdentity) return false;
+        get().applyApiData(data, resync.context);
+        return true;
     };
 
     return ({
@@ -2306,8 +2334,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     const entity = resyncData.tasks.find(task => task.id === id);
                     if (!entity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
                     confirmedRemote = { entity, revision: entity.lockVersion };
-                    get().applyApiData(resyncData);
+                    if (!applyMutationResyncData(resyncData)) return;
                 } catch (error) {
+                    if (isSupersededMutationResyncError(error)) return;
                     if (!retryIsCurrent() || get().dataReadStatus === 'loading') return;
                     const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
                     get().registerTaskConflict(id, conflictRecord.message || message, conflictRecord.generation,
@@ -2403,9 +2432,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus !== 'ready') return;
                 const remoteEntity = resyncData.tasks.find(task => task.id === id);
                 if (!remoteEntity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
-                get().applyApiData(resyncData);
+                if (!applyMutationResyncData(resyncData)) return;
                 selectedRemote = { entity: remoteEntity, revision: remoteEntity.lockVersion };
             } catch (error) {
+                if (isSupersededMutationResyncError(error)) return;
                 if (get().taskConflicts[id] !== initialConflict ||
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus === 'loading') return;
                 const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
@@ -2904,6 +2934,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
         refreshData: async () => refreshCurrentData('refresh'),
+        invalidateDataReads: () => {
+            invalidateDataRequests();
+            mutationResyncGeneration += 1;
+        },
 
     loadInitialData: async (params) => {
         const generation = ++dataRequestGeneration;
@@ -3359,11 +3393,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     if (operation) get().rollbackBarOperation(operation.operationId);
                 });
                 if (failures.size > 0) {
-                    const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
-                    useUIStore.getState().addNotification(
-                        `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`,
-                        'error'
-                    );
+                    const reportableFailure = [...failures.entries()].find(([taskId]) => (
+                        !saveResult.resyncSupersededTaskIds?.has(taskId)
+                    ));
+                    if (reportableFailure) {
+                        const [failedTaskId, failedReason] = reportableFailure;
+                        useUIStore.getState().addNotification(
+                            `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`,
+                            'error'
+                        );
+                    }
                     return failures;
                 }
 

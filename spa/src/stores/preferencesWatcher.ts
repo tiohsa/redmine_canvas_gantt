@@ -14,6 +14,9 @@ type TaskStoreState = ReturnType<typeof useTaskStore.getState>;
 type UIStoreState = ReturnType<typeof useUIStore.getState>;
 
 type DisplayPreferenceSnapshot = {
+    issueDialogWidthPx: UIStoreState['issueDialogWidthPx'];
+    issueDialogHeightMode: UIStoreState['issueDialogHeightMode'];
+    issueDialogHeightPercent: UIStoreState['issueDialogHeightPercent'];
     zoomLevel: TaskStoreState['zoomLevel'];
     viewMode: TaskStoreState['viewMode'];
     viewport: Pick<TaskStoreState['viewport'], 'startDate' | 'scrollX' | 'scrollY' | 'scale'>;
@@ -78,6 +81,9 @@ const selectDisplayPreferenceSnapshot = (
 ): DisplayPreferenceSnapshot => {
     const queryColumnsActive = uiState.columnStateSource === 'query';
     return {
+        issueDialogWidthPx: uiState.issueDialogWidthPx,
+        issueDialogHeightMode: uiState.issueDialogHeightMode,
+        issueDialogHeightPercent: uiState.issueDialogHeightPercent,
         zoomLevel: taskState.zoomLevel,
         viewMode: taskState.viewMode,
         viewport: {
@@ -146,6 +152,9 @@ const persistDisplayPreferences = (taskState: TaskStoreState, uiState: UIStoreSt
     const personalDisplayPreferences = loadDisplayPreferencesWithSource().preferences;
     const queryColumnsActive = uiState.columnStateSource === 'query';
     const displaySnapshot = buildStoredDisplayPreferences({
+        issueDialogWidthPx: uiState.issueDialogWidthPx,
+        issueDialogHeightMode: uiState.issueDialogHeightMode,
+        issueDialogHeightPercent: uiState.issueDialogHeightPercent,
         zoomLevel: taskState.zoomLevel,
         viewMode: taskState.viewMode,
         viewport: {

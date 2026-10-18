@@ -115,6 +115,47 @@ describe('Preferences storage', () => {
         expect(loadPreferences(2).showBaseline).toBeUndefined();
     });
 
+    it('persists issue dialog sizing in project and shared Version 4 display preferences', () => {
+        saveDisplayPreferences({ issueDialogWidthPx: 900, issueDialogHeightMode: 'fixed', issueDialogHeightPercent: 65 }, 1);
+        expect(loadDisplayPreferencesWithSource(1).preferences).toMatchObject({
+            issueDialogWidthPx: 900,
+            issueDialogHeightMode: 'fixed',
+            issueDialogHeightPercent: 65
+        });
+        expect(loadDisplayPreferencesWithSource(2).preferences.issueDialogWidthPx).toBeUndefined();
+
+        saveGlobalDisplayPreferences({ issueDialogWidthPx: 1500, issueDialogHeightMode: 'fixed', issueDialogHeightPercent: 90 }, true);
+        expect(loadDisplayPreferencesWithSource(2).preferences).toMatchObject({
+            issueDialogWidthPx: 1500,
+            issueDialogHeightMode: 'fixed',
+            issueDialogHeightPercent: 90
+        });
+        expect(JSON.parse(window.localStorage.getItem('canvasGantt:preferences') || '{}').version).toBe(4);
+    });
+
+    it('normalizes invalid issue dialog sizing preferences to their defaults', () => {
+        window.localStorage.setItem('canvasGantt:preferences', JSON.stringify({
+            version: 4,
+            general: {},
+            display: {
+                projects: {
+                    'project:1': {
+                        issueDialogWidthPx: 1000,
+                        issueDialogHeightMode: 'content',
+                        issueDialogHeightPercent: 72
+                    }
+                },
+                global: { enabled: false, preferences: {} }
+            }
+        }));
+
+        expect(loadDisplayPreferencesWithSource(1).preferences).toMatchObject({
+            issueDialogWidthPx: 1200,
+            issueDialogHeightMode: 'auto',
+            issueDialogHeightPercent: 80
+        });
+    });
+
     it('saves critical path calculation in project and shared display preferences', () => {
         saveDisplayPreferences({ calculateCriticalPathEnabled: false }, 1);
         expect(loadPreferences(1).calculateCriticalPathEnabled).toBe(false);

@@ -5,6 +5,7 @@ import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
 import { useUIStore } from './UIStore';
+import { useBaselineStore } from './BaselineStore';
 import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
 import { loadLastUsedSharedQueryProjectState, loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
@@ -63,6 +64,49 @@ const deferred = <T,>() => {
     });
     return { promise, resolve, reject };
 };
+
+describe('baseline read invalidation during deletion', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useBaselineStore.setState(useBaselineStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
+    });
+
+    const baseline = {
+        snapshotId: 'baseline-old', projectId: 'p1', capturedAt: '2026-10-17T00:00:00.000Z',
+        scope: 'project' as const, tasksByIssueId: {}
+    };
+
+    it('rejects a data response started during DELETE after success invalidates reads', async () => {
+        useBaselineStore.setState({ snapshot: baseline, hasBaseline: true, saveStatus: 'deleting' });
+        const delayedRead = deferred<ReturnType<typeof buildApiData> & { baseline: typeof baseline }>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(
+            delayedRead.promise as unknown as ReturnType<typeof apiClient.fetchData>
+        );
+
+        const read = useTaskStore.getState().refreshData();
+        useTaskStore.getState().invalidateDataReads();
+        useBaselineStore.getState().setSnapshot(null);
+        useBaselineStore.getState().setSaveStatus('idle');
+        delayedRead.resolve({ ...buildApiData([]), baseline });
+        await read;
+
+        expect(useBaselineStore.getState().snapshot).toBeNull();
+        expect(useBaselineStore.getState().saveStatus).toBe('idle');
+    });
+
+    it('keeps deleting status when a read applies before the mutation settles', async () => {
+        useBaselineStore.setState({ snapshot: baseline, hasBaseline: true, saveStatus: 'deleting' });
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce({
+            ...buildApiData([]), baseline
+        } as Awaited<ReturnType<typeof apiClient.fetchData>>);
+
+        await useTaskStore.getState().refreshData();
+
+        expect(useBaselineStore.getState().snapshot?.snapshotId).toBe('baseline-old');
+        expect(useBaselineStore.getState().saveStatus).toBe('deleting');
+    });
+});
 
 describe('TaskStore viewport clamping', () => {
     beforeEach(() => {
@@ -3097,6 +3141,111 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(useTaskStore.getState().taskConflicts[original.id]).toBe(conflict);
         expect(useTaskStore.getState().modifiedTaskIds.has(original.id)).toBe(true);
         if (change === 'edit') expect(useTaskStore.getState().allTasks[0].subject).toBe('later draft');
+    });
+
+    it('rejects an invalidated conflict resync without restoring a deleted baseline or changing local conflict state', async () => {
+        useUIStore.setState({ notifications: [] });
+        const local = buildTask({ id: 'task-1', subject: 'original', lockVersion: 1 });
+        const remote = { ...local, subject: 'remote', lockVersion: 2 };
+        useTaskStore.getState().applyApiData({ ...buildApiData([local]), baseline: null });
+        useBaselineStore.getState().setSnapshot({
+            snapshotId: 'baseline-1', projectId: 'p1', capturedAt: '2026-10-17T00:00:00Z',
+            scope: 'project', tasksByIssueId: {}
+        });
+        useTaskStore.getState().updateTask(local.id, { subject: 'local intent' });
+        useTaskStore.getState().registerTaskConflict(local.id, 'Conflict');
+        const originalConflict = useTaskStore.getState().taskConflicts[local.id];
+        const pending = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(pending.promise);
+
+        const resolution = useTaskStore.getState().resolveTaskConflict(local.id, 'remote');
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        useTaskStore.getState().invalidateDataReads();
+        useBaselineStore.getState().setSnapshot(null);
+        pending.resolve({ ...buildApiData([remote]), baseline: {
+            snapshotId: 'baseline-1', projectId: 'p1', capturedAt: '2026-10-17T00:00:00Z',
+            scope: 'project', tasksByIssueId: {}
+        } });
+        await resolution;
+
+        const state = useTaskStore.getState();
+        expect(useBaselineStore.getState().snapshot).toBeNull();
+        expect(state.taskConflicts[local.id]).toBe(originalConflict);
+        expect(state.localTaskPatches[local.id]).toHaveLength(1);
+        expect(state.modifiedTaskIds.has(local.id)).toBe(true);
+        expect(state.dataReadStatus).toBe('ready');
+        expect(useUIStore.getState().notifications.some(notification => notification.type === 'error')).toBe(false);
+    });
+
+    it('rechecks invalidation after a resync validates but before its caller applies the payload', async () => {
+        useUIStore.setState({ notifications: [] });
+        const local = buildTask({ id: 'task-1', subject: 'original', lockVersion: 1 });
+        const remote = { ...local, subject: 'remote', lockVersion: 2 };
+        const oldBaseline = {
+            snapshotId: 'baseline-1', projectId: 'p1', capturedAt: '2026-10-17T00:00:00Z',
+            scope: 'project' as const, tasksByIssueId: {}
+        };
+        useTaskStore.getState().applyApiData({ ...buildApiData([local]), baseline: oldBaseline });
+        useBaselineStore.getState().setSnapshot(oldBaseline);
+        useTaskStore.getState().updateTask(local.id, { subject: 'local intent' });
+        useTaskStore.getState().registerTaskConflict(local.id, 'Conflict');
+        const originalConflict = useTaskStore.getState().taskConflicts[local.id];
+        const pending = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(pending.promise);
+        let invalidatedBeforeCallerApply = false;
+        const unsubscribe = useTaskStore.subscribe((state, previous) => {
+            if (!invalidatedBeforeCallerApply && previous.dataReadStatus === 'loading' &&
+                state.dataReadStatus === 'ready') {
+                invalidatedBeforeCallerApply = true;
+                useTaskStore.getState().invalidateDataReads();
+                useBaselineStore.getState().setSnapshot(null);
+            }
+        });
+
+        try {
+            const resolution = useTaskStore.getState().resolveTaskConflict(local.id, 'remote');
+            pending.resolve({ ...buildApiData([remote]), baseline: oldBaseline });
+            await resolution;
+        } finally {
+            unsubscribe();
+        }
+
+        const state = useTaskStore.getState();
+        expect(invalidatedBeforeCallerApply).toBe(true);
+        expect(useBaselineStore.getState().snapshot).toBeNull();
+        expect(state.taskConflicts[local.id]).toBe(originalConflict);
+        expect(state.localTaskPatches[local.id]).toHaveLength(1);
+        expect(state.dataReadStatus).toBe('ready');
+        expect(useUIStore.getState().notifications.some(notification => notification.type === 'error')).toBe(false);
+    });
+
+    it('returns unresolved work after a successful partial save and cancelled conflict resync', async () => {
+        useUIStore.setState({ notifications: [] });
+        const saved = buildTask({ id: 'saved', subject: 'saved', lockVersion: 1 });
+        const conflicted = buildTask({ id: 'conflicted', subject: 'conflicted', lockVersion: 1 });
+        useTaskStore.getState().applyApiData(buildApiData([saved, conflicted]));
+        useTaskStore.getState().updateTask(saved.id, { subject: 'saved locally' });
+        useTaskStore.getState().updateTask(conflicted.id, { subject: 'local intent' });
+        useTaskStore.setState({ autoSave: false });
+        const pending = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => task.id === saved.id
+            ? { status: 'ok', lockVersion: 2 }
+            : { status: 'conflict', error: 'stale revision' });
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(pending.promise);
+
+        const save = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().invalidateDataReads();
+        pending.resolve({ ...buildApiData([conflicted]), baseline: null });
+        const failures = await save;
+
+        const state = useTaskStore.getState();
+        expect(failures.has(conflicted.id)).toBe(true);
+        expect(failures.has(saved.id)).toBe(false);
+        expect(state.modifiedTaskIds).toEqual(new Set([conflicted.id]));
+        expect(state.localTaskPatches[conflicted.id]).toHaveLength(1);
+        expect(state.taskConflicts[conflicted.id]?.remoteAvailability).toBe('unavailable');
+        expect(useUIStore.getState().notifications.some(notification => notification.type === 'error')).toBe(false);
     });
 
     it('keeps the confirmed revision fixed across transport retry after a newer server update', async () => {

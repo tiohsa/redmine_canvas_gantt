@@ -7,6 +7,10 @@ Use the toolbar and display settings to adjust zoom, month/week/day view, row he
 You can also toggle the progress line, task titles, hierarchy lines, date-only task markers, version headers, baseline visibility, and dependency-based sorting.
 
 ::: warning Development addition — not included in v0.18.0
+Development HEAD adds **Ticket dialog** controls to display settings. Choose a width of Compact (900 px), Standard (1200 px), or Wide (1500 px), and choose Automatic height or a fixed height from 50% to 90% in 5-point steps (default 80%). The width defaults to Standard. Select **Reset** to restore the defaults. These preferences follow the existing display-settings scope: per project or shared across projects in the current browser profile. The controls affect issue dialogs; Time Entry and Query editing retain their existing sizes. Changes take effect in the browser without a page reload.
+:::
+
+::: warning Development addition — not included in v0.18.0
 In the **Calculation & Performance** section of display settings, **Calculate critical path** controls calculation of the critical path and total slack. It is on by default. Turning it off clears critical-path and total-slack notifications; dependency-based automatic scheduling continues to work. This preference is stored with display settings and can be saved per project or for all projects in the current browser profile.
 :::
 

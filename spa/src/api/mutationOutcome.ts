@@ -73,7 +73,8 @@ export const classifyMutationResult = (value: unknown): MutationOutcome => {
     const failure = decodeMutationFailure(record.failure);
     const failCount = (value as { failCount?: unknown }).failCount;
     const baselineMissing = Object.prototype.hasOwnProperty.call(record, 'baseline') && record.baseline === null;
-    if (status === 'ok' && ((typeof failCount === 'number' && failCount > 0) || baselineMissing)) {
+    const validatedBaselineDeletion = typeof record.deletedSnapshotId === 'string' && record.deletedSnapshotId.length > 0;
+    if (status === 'ok' && ((typeof failCount === 'number' && failCount > 0) || (baselineMissing && !validatedBaselineDeletion))) {
         return {
             kind: 'terminal',
             status,

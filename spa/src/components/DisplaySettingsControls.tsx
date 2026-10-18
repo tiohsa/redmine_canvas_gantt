@@ -141,6 +141,13 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         setDisplayPreferencesGlobalEnabled,
         datePlacementMode,
         setDatePlacementMode,
+        issueDialogWidthPx,
+        issueDialogHeightMode,
+        issueDialogHeightPercent,
+        setIssueDialogWidthPx,
+        setIssueDialogHeightMode,
+        setIssueDialogHeightPercent,
+        resetIssueDialogSize,
         leftPaneVisible,
         rightPaneVisible,
         toggleLeftPane,
@@ -166,7 +173,10 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         || showTaskBarDates !== DEFAULT_DISPLAY_SETTINGS.showTaskBarDates
         || showHierarchyLines !== DEFAULT_DISPLAY_SETTINGS.showHierarchyLines
         || calculateCriticalPathEnabled !== DEFAULT_DISPLAY_SETTINGS.calculateCriticalPathEnabled
-        || datePlacementMode !== DatePlacementMode.WorkingDays;
+        || datePlacementMode !== DatePlacementMode.WorkingDays
+        || issueDialogWidthPx !== 1200
+        || issueDialogHeightMode !== 'auto'
+        || issueDialogHeightPercent !== 80;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
     const selectedPaneMode = isLeftPaneMaximized
@@ -211,6 +221,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             showDueDateOnly,
             showVersions,
             showBaseline,
+            issueDialogWidthPx,
+            issueDialogHeightMode,
+            issueDialogHeightPercent,
             visibleColumns,
             columnSettings,
             organizeByDependency,
@@ -361,6 +374,64 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                             <DisplaySettingSwitch checked={showTaskTitles} onChange={toggleTaskTitles} label={i18n.t('label_toggle_task_titles') || 'Ticket titles'} />
                             <DisplaySettingSwitch checked={showTaskBarDates} onChange={toggleTaskBarDates} label={i18n.t('label_toggle_task_bar_dates') || 'Task-bar dates'} />
                             <DisplaySettingSwitch checked={showHierarchyLines} onChange={toggleHierarchyLines} label={i18n.t('label_toggle_hierarchy_lines') || 'Hierarchy lines'} />
+                        </div>
+
+                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8 }}>
+                            <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
+                                {i18n.t('label_issue_dialog_settings') || 'Ticket dialog'}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                                <label style={{ display: 'grid', gap: 4 }}>
+                                    <span>{i18n.t('label_issue_dialog_width') || 'Width'}</span>
+                                    <select
+                                        data-testid="issue-dialog-width-select"
+                                        aria-label={i18n.t('label_issue_dialog_width') || 'Width'}
+                                        value={issueDialogWidthPx}
+                                        onChange={(event) => setIssueDialogWidthPx(Number(event.target.value) as 900 | 1200 | 1500)}
+                                        style={{ height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorderStrong}`, background: designTokens.controlBg, padding: '0 8px' }}
+                                    >
+                                        <option value={900}>{i18n.t('label_issue_dialog_width_compact') || 'Compact (900 px)'}</option>
+                                        <option value={1200}>{i18n.t('label_issue_dialog_width_standard') || 'Standard (1200 px)'}</option>
+                                        <option value={1500}>{i18n.t('label_issue_dialog_width_wide') || 'Wide (1500 px)'}</option>
+                                    </select>
+                                </label>
+                                <label style={{ display: 'grid', gap: 4 }}>
+                                    <span>{i18n.t('label_issue_dialog_height') || 'Height'}</span>
+                                    <select
+                                        data-testid="issue-dialog-height-mode-select"
+                                        aria-label={i18n.t('label_issue_dialog_height') || 'Height'}
+                                        value={issueDialogHeightMode}
+                                        onChange={(event) => setIssueDialogHeightMode(event.target.value as 'auto' | 'fixed')}
+                                        style={{ height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorderStrong}`, background: designTokens.controlBg, padding: '0 8px' }}
+                                    >
+                                        <option value="auto">{i18n.t('label_issue_dialog_height_auto') || 'Automatic'}</option>
+                                        <option value="fixed">{i18n.t('label_issue_dialog_height_fixed') || 'Fixed'}</option>
+                                    </select>
+                                </label>
+                                <label style={{ display: 'grid', gap: 4 }}>
+                                    <span>{i18n.t('label_issue_dialog_height_percent') || 'Fixed height (%)'}</span>
+                                    <select
+                                        data-testid="issue-dialog-height-percent-select"
+                                        aria-label={i18n.t('label_issue_dialog_height_percent') || 'Fixed height (%)'}
+                                        value={issueDialogHeightPercent}
+                                        disabled={issueDialogHeightMode !== 'fixed'}
+                                        onChange={(event) => setIssueDialogHeightPercent(Number(event.target.value))}
+                                        style={{ height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorderStrong}`, background: designTokens.controlBg, padding: '0 8px' }}
+                                    >
+                                        {Array.from({ length: 9 }, (_, index) => 50 + index * 5).map((percent) => (
+                                            <option key={percent} value={percent}>{percent}%</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <button
+                                    type="button"
+                                    data-testid="issue-dialog-size-reset"
+                                    onClick={resetIssueDialogSize}
+                                    style={{ alignSelf: 'end', height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorder}`, background: designTokens.controlBg, color: designTokens.controlFg, cursor: 'pointer' }}
+                                >
+                                    {i18n.t('label_issue_dialog_reset') || 'Reset'}
+                                </button>
+                            </div>
                         </div>
 
                         <div
