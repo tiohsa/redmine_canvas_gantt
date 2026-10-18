@@ -53,6 +53,12 @@ export interface UpdateTaskResult extends MutationMetadata {
     error?: string;
 }
 
+export interface BaselineDeleteResult extends MutationMetadata {
+    status: 'ok';
+    baseline: null;
+    deletedSnapshotId: string;
+}
+
 export const mutationStatusForHttp = (status: number): Exclude<MutationStatus, 'ok'> => {
     if (status === 409) return 'conflict';
     if (status === 403) return 'forbidden';
@@ -77,6 +83,25 @@ export const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'c
     const failure = decodeMutationFailure(record?.failure);
     if (failure) metadata.failure = failure;
     return metadata;
+};
+
+export const parseBaselineDeleteResult = (value: unknown, expectedSnapshotId: string): BaselineDeleteResult | undefined => {
+    const data = asRecord(value);
+    if (
+        data?.status !== 'ok' ||
+        data.completeness !== 'complete' ||
+        data.baseline !== null ||
+        data.deleted_snapshot_id !== expectedSnapshotId
+    ) {
+        return undefined;
+    }
+
+    return {
+        status: 'ok',
+        baseline: null,
+        deletedSnapshotId: expectedSnapshotId,
+        ...parseMutationMetadata(data)
+    };
 };
 
 export const parseMutationEntity = (value: unknown): PersistedTaskState | undefined => {

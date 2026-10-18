@@ -26,11 +26,13 @@ import { sessionFetch } from './sessionFetch';
 import { decodeMutationFailure, type MutationFailure } from './mutationOutcome';
 import {
     mutationStatusForHttp,
+    parseBaselineDeleteResult,
     parseMutationMetadata,
     parseMutationTaskResult as decodeMutationTaskResult,
     parseScheduleMutationResult as decodeScheduleMutationResult,
     type MutationMetadata,
     type MutationStatus,
+    type BaselineDeleteResult,
     type ScheduleAdjustment,
     type ScheduleMutationResult,
     type UpdateTaskResult
@@ -38,6 +40,7 @@ import {
 import { getConfirmedProjectScope, type ConfirmedProjectScope } from './projectScopeContext';
 
 export type {
+    BaselineDeleteResult,
     MutationMetadata,
     MutationStatus,
     ScheduleAdjustment,
@@ -847,6 +850,44 @@ export const apiClient = {
             baseline: baselinePayload.snapshot,
             warnings: [...warnings, ...baselinePayload.warnings]
         };
+    },
+
+    deleteBaseline: async (snapshotId: string, apiBase?: string): Promise<BaselineDeleteResult> => {
+        const config = getConfig();
+        const url = new URL(`${apiBase ?? config.apiBase}/baseline.json`, window.location.origin);
+        if (url.origin !== window.location.origin) {
+            throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
+        }
+
+        const response = await sessionFetch(url.toString(), {
+            method: 'DELETE',
+            headers: buildJsonHeaders(config, true),
+            body: JSON.stringify({ snapshot_id: snapshotId })
+        });
+
+        if (!response.ok) throw await parseMutationError(response);
+
+        let payload: unknown;
+        try {
+            payload = await readJson(response);
+        } catch (error) {
+            if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') throw error;
+            throw new ApiMutationError(
+                'protocol_error',
+                i18n.t('label_invalid_response') || 'Invalid response',
+                response.status
+            );
+        }
+
+        const result = parseBaselineDeleteResult(payload, snapshotId);
+        if (!result) {
+            throw new ApiMutationError(
+                'protocol_error',
+                i18n.t('label_invalid_response') || 'Invalid response',
+                response.status
+            );
+        }
+        return result;
     },
 
     fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number, draftIntent?: Record<string, unknown>): Promise<TaskEditMeta> => {

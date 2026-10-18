@@ -5,7 +5,7 @@ import type { BaselineSaveScope } from '../types/baseline';
 import { fontFamilies, designTokens } from '../styles/designTokens';
 
 interface BaselineControlsProps {
-    baselineSaveStatus: 'idle' | 'saving' | 'ready' | 'error';
+    baselineSaveStatus: 'idle' | 'saving' | 'deleting' | 'ready' | 'error';
     hasBaseline: boolean;
     showBaseline: boolean;
     baselineEditable: boolean;
@@ -14,6 +14,7 @@ interface BaselineControlsProps {
     showBaselineSaveMenu: boolean;
     onToggleSaveMenu: () => void;
     onSaveBaseline: (scope: BaselineSaveScope) => void;
+    onDeleteBaseline: () => void;
     onToggleBaseline: () => void;
 }
 
@@ -39,12 +40,13 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
     showBaselineSaveMenu,
     onToggleSaveMenu,
     onSaveBaseline,
+    onDeleteBaseline,
     onToggleBaseline
 }) => {
     if (!baselineEditable && !baselineViewable) return null;
 
-    const isSaving = baselineSaveStatus === 'saving';
-    const isActive = showBaseline || isSaving;
+    const isBusy = baselineSaveStatus === 'saving' || baselineSaveStatus === 'deleting';
+    const isActive = showBaseline || isBusy;
 
     return (
         <div ref={baselineSaveMenuRef} style={{ position: 'relative' }}>
@@ -54,7 +56,7 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                 aria-label={i18n.t('label_save_baseline') || 'Save Baseline'}
                 title={i18n.t('label_save_baseline_tooltip') || 'Save a baseline snapshot'}
                 aria-pressed={isActive}
-                disabled={isSaving}
+                disabled={isBusy}
                 data-testid="baseline-save-menu-button"
                 style={{
                     display: 'flex',
@@ -66,18 +68,18 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                     border: `1px solid ${isActive ? designTokens.controlActiveFg : designTokens.controlBorder}`,
                     backgroundColor: isActive ? designTokens.controlActiveBg : designTokens.controlBg,
                     color: isActive ? designTokens.controlActiveFg : designTokens.controlFg,
-                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                    cursor: isBusy ? 'not-allowed' : 'pointer',
                     height: '32px',
                     width: '40px'
                 }}
             >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: isSaving ? 0.6 : 1 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: isBusy ? 0.6 : 1 }}>
                     <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
                     <circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
 
-            {showBaselineSaveMenu && !isSaving && (
+            {showBaselineSaveMenu && !isBusy && (
                 <div
                     data-testid="baseline-save-menu"
                     style={{
@@ -133,6 +135,11 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                             <button type="button" data-testid="baseline-save-project-button" onClick={() => onSaveBaseline('project')} style={menuItemStyle}>
                                 {i18n.t('label_save_baseline_project') || 'Save whole project as baseline'}
                             </button>
+                            {hasBaseline && (
+                                <button type="button" data-testid="baseline-delete-button" onClick={onDeleteBaseline} style={menuItemStyle}>
+                                    {i18n.t('label_delete_baseline') || 'Delete baseline'}
+                                </button>
+                            )}
                         </>
                     )}
                 </div>

@@ -76,6 +76,13 @@ export type ScheduleMutationExecutor = (
     changes: ScheduleMutationRequest[]
 ) => Promise<ScheduleMutationResponse>;
 
+export class SupersededDataReadError extends Error {
+    constructor() {
+        super('The data read was superseded.');
+        this.name = 'SupersededDataReadError';
+    }
+}
+
 const hasPersistableIntentFields = (fields: TaskFields): boolean => Object.keys(fields).length > 0;
 
 type FetchDataResult = {
@@ -397,8 +404,16 @@ export const saveModifiedTasks = async (
             try {
                 resyncedTasks = (await fetchData({ query: { selectedStatusIds } })).tasks;
             } catch (resyncError) {
-                const resyncMessage = resyncError instanceof Error ? resyncError.message : transportMessage;
-                scheduleResult = { status: 'transient_error', errors: [resyncMessage] };
+                if (resyncError instanceof SupersededDataReadError) {
+                    scheduleResult = {
+                        status: 'conflict',
+                        errors: [i18n.t('label_schedule_outcome_unknown') || 'The schedule mutation outcome is unknown.'],
+                        conflicts: scheduleChanges.map(change => ({ taskId: change.taskId }))
+                    };
+                } else {
+                    const resyncMessage = resyncError instanceof Error ? resyncError.message : transportMessage;
+                    scheduleResult = { status: 'transient_error', errors: [resyncMessage] };
+                }
             }
 
             if (resyncedTasks) {

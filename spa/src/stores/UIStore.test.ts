@@ -62,6 +62,22 @@ describe('UIStore', () => {
         expect(useUIStore.getState().notifications).toHaveLength(2);
     });
 
+    it('resets issue dialog sizing to its defaults', () => {
+        useUIStore.getState().setIssueDialogWidthPx(1500);
+        useUIStore.getState().setIssueDialogHeightMode('fixed');
+        useUIStore.getState().setIssueDialogHeightPercent(90);
+        useUIStore.getState().setIssueDialogFullScreen(true);
+
+        useUIStore.getState().resetIssueDialogSize();
+
+        expect(useUIStore.getState()).toMatchObject({
+            issueDialogWidthPx: 1200,
+            issueDialogHeightMode: 'auto',
+            issueDialogHeightPercent: 80,
+            issueDialogFullScreen: false
+        });
+    });
+
     it('toggles task title visibility', () => {
         type UIStoreState = ReturnType<typeof useUIStore.getState> & {
             showTaskTitles: boolean;

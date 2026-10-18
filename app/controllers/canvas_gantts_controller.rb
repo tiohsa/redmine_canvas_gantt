@@ -40,6 +40,17 @@ class CanvasGanttsController < ApplicationController
     button_clear: :button_clear,
     label_baseline_incomplete: :label_baseline_incomplete,
     label_baseline_invalid_task: :label_baseline_invalid_task,
+    label_issue_dialog_settings: :label_issue_dialog_settings,
+    label_issue_dialog_fullscreen: :label_issue_dialog_fullscreen,
+    label_issue_dialog_width: :label_issue_dialog_width,
+    label_issue_dialog_width_compact: :label_issue_dialog_width_compact,
+    label_issue_dialog_width_standard: :label_issue_dialog_width_standard,
+    label_issue_dialog_width_wide: :label_issue_dialog_width_wide,
+    label_issue_dialog_height: :label_issue_dialog_height,
+    label_issue_dialog_height_auto: :label_issue_dialog_height_auto,
+    label_issue_dialog_height_fixed: :label_issue_dialog_height_fixed,
+    label_issue_dialog_height_percent: :label_issue_dialog_height_percent,
+    label_issue_dialog_reset: :label_issue_dialog_reset,
     field_id: :field_id,
     field_start_date: :field_start_date,
     field_due_date: :field_due_date,
@@ -415,6 +426,20 @@ class CanvasGanttsController < ApplicationController
     label_save_baseline_project: :label_save_baseline_project,
     label_baseline_saved: :label_baseline_saved,
     label_baseline_save_failed: :label_baseline_save_failed,
+    label_delete_baseline: :label_delete_baseline,
+    label_baseline_delete_title: :label_baseline_delete_title,
+    label_baseline_delete_body: :label_baseline_delete_body,
+    label_baseline_delete_irreversible: :label_baseline_delete_irreversible,
+    label_baseline_delete_saved_at: :label_baseline_delete_saved_at,
+    label_baseline_delete_saved_by: :label_baseline_delete_saved_by,
+    label_baseline_delete_scope: :label_baseline_delete_scope,
+    label_baseline_delete_confirm: :label_baseline_delete_confirm,
+    label_deleting: :label_deleting,
+    label_baseline_delete_cancel: :label_baseline_delete_cancel,
+    label_baseline_updated_elsewhere: :label_baseline_updated_elsewhere,
+    label_baseline_delete_failed: :label_baseline_delete_failed,
+    label_baseline_delete_unknown: :label_baseline_delete_unknown,
+    label_baseline_deleted: :label_baseline_deleted,
     label_baseline_comparison: :label_baseline_comparison,
     label_baseline_duration: :label_baseline_duration,
     label_baseline_saved_meta: :label_baseline_saved_meta,
@@ -577,7 +602,7 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'issue_mutation_service').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :actual_workload, :data, :queries, :edit_meta, :edit_meta_preview, :update, :destroy_task, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
+  accept_api_auth :actual_workload, :data, :queries, :edit_meta, :edit_meta_preview, :update, :destroy_task, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline, :delete_baseline
 
   before_action :resolve_canvas_project
   before_action :set_permissions
@@ -733,6 +758,48 @@ class CanvasGanttsController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_entity
   rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
     render_data_payload_limit(e)
+  rescue => e
+    render_internal_error(e)
+  end
+
+  # DELETE /projects/:project_id/canvas_gantt/baseline.json
+  def delete_baseline
+    return unless ensure_baseline_edit_permission
+
+    snapshot_id = params[:snapshot_id]
+    unless valid_baseline_snapshot_id?(snapshot_id)
+      return render json: mutation_failure_response(
+        error: canvas_gantt_l(:error_canvas_gantt_baseline_snapshot_id_required),
+        kind: 'validation_error',
+        resource_role: 'target',
+        resource_type: 'baseline'
+      ), status: :unprocessable_entity
+    end
+
+    deleted_snapshot_id = baseline_repository.delete(
+      project_id: @project.id,
+      expected_snapshot_id: snapshot_id
+    )
+
+    render json: mutation_response(status: 'ok', completeness: 'complete').merge(
+      baseline: nil,
+      deleted_snapshot_id: deleted_snapshot_id
+    )
+  rescue RedmineCanvasGantt::BaselineRepository::SnapshotNotFound
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_baseline_not_found),
+      kind: 'not_found',
+      resource_role: 'target',
+      resource_type: 'baseline'
+    ), status: :not_found
+  rescue RedmineCanvasGantt::BaselineRepository::SnapshotConflict
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_baseline_changed),
+      kind: 'conflict',
+      resource_role: 'target',
+      resource_type: 'baseline',
+      remote_availability: 'needs_refresh'
+    ), status: :conflict
   rescue => e
     render_internal_error(e)
   end
@@ -1106,6 +1173,11 @@ class CanvasGanttsController < ApplicationController
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
+  end
+
+  def valid_baseline_snapshot_id?(snapshot_id)
+    snapshot_id.is_a?(String) && snapshot_id.valid_encoding? && snapshot_id.present? && snapshot_id == snapshot_id.strip &&
+      snapshot_id.length <= 255 && snapshot_id.match?(/\A[^\u0000-\u001f\u007f]+\z/)
   end
 
   def set_permissions

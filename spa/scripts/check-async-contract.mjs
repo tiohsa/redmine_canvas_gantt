@@ -16,7 +16,7 @@ const allowedReadBoundaries = new Set([
   'stores/WorkloadStore.ts',
   'stores/TaskStore.ts'
 ]);
-const mutationPattern = /apiClient\.(updateTask|updateTaskFields|createRelation|updateRelation|deleteRelation|deleteTask|bulkCreateSubtasks|saveBaseline)\s*\(/;
+const mutationPattern = /apiClient\.(updateTask|updateTaskFields|createRelation|updateRelation|deleteRelation|deleteTask|bulkCreateSubtasks|saveBaseline|deleteBaseline)\s*\(/;
 const readPattern = /apiClient\.(fetchActualWorkload|fetchData|fetchQueries|fetchEditMeta|getSubtaskTrackers)\s*\(/;
 
 const filesUnder = async (directory) => {

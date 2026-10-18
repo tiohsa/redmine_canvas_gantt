@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../types';
 import type { TaskFields } from '../../services/taskMutationService';
-import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, mutationLifecycleMetrics, saveModifiedTasks } from './taskPersistence';
+import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, mutationLifecycleMetrics, saveModifiedTasks, SupersededDataReadError } from './taskPersistence';
 import { DatePlacementMode } from '../../types/constraints';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
@@ -542,6 +542,24 @@ describe('saveModifiedTasks', () => {
         expect(fetchData).toHaveBeenCalledTimes(1);
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('resync unavailable');
+    });
+
+    it('keeps an unresolved schedule failure when its response-loss resync is superseded', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockRejectedValue(new Error('connection lost'));
+        const fetchData = vi.fn().mockRejectedValue(new SupersededDataReadError());
+        const onConflict = vi.fn();
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set(['A']), [], vi.fn(), fetchData,
+            undefined, undefined, onConflict, undefined, undefined,
+            { A: { due_date: 11 } }, undefined, { A: true }, scheduleMutation, { A: 1 }
+        );
+
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.failures.get('A')).toMatch(/unknown/i);
+        expect(result.batchStatus).toBe('partial_failure');
+        expect(onConflict).toHaveBeenCalledWith('A', expect.stringMatching(/unknown/i), undefined, undefined);
     });
 
     it('fails a modified task with no explicit mutation intent before sending a request', async () => {

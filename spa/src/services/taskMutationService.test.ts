@@ -315,6 +315,53 @@ describe('taskMutationService mutation boundary', () => {
         expect(record).toMatchObject({ status: 'failed', outcome: 'terminal' });
     });
 
+    it('serializes baseline deletion with saves and keeps the project endpoint captured when queued', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        let releaseSave!: () => void;
+        const saveGate = new Promise<void>(resolve => { releaseSave = resolve; });
+        const saveBaseline = vi.spyOn(apiClient, 'saveBaseline').mockImplementation(async () => {
+            await saveGate;
+            return { status: 'ok', baseline: null };
+        });
+        const deleteBaseline = vi.spyOn(apiClient, 'deleteBaseline').mockResolvedValue({
+            status: 'ok', baseline: null, deletedSnapshotId: 'snapshot-1', completeness: 'complete'
+        });
+
+        const saving = taskMutationService.saveBaseline({ scope: 'project' });
+        await vi.waitFor(() => expect(saveBaseline).toHaveBeenCalledTimes(1));
+        const deleting = taskMutationService.deleteBaseline('snapshot-1');
+        window.RedmineCanvasGantt = {
+            projectId: 2,
+            apiBase: '/projects/2/canvas_gantt',
+            redmineBase: '',
+            authToken: 'other-token'
+        };
+
+        await new Promise<void>(resolve => setTimeout(resolve, 10));
+        expect(deleteBaseline).not.toHaveBeenCalled();
+        releaseSave();
+        await Promise.all([saving, deleting]);
+
+        expect(deleteBaseline).toHaveBeenCalledExactlyOnceWith('snapshot-1', '/projects/1/canvas_gantt');
+        const record = getMutationOperationRecords()
+            .filter(candidate => candidate.entityIds.includes('baseline:1:delete'))
+            .at(-1);
+        expect(record).toMatchObject({ status: 'succeeded', outcome: 'success' });
+    });
+
+    it('sends a baseline DELETE once when the transport outcome is unknown', async () => {
+        const deleteBaseline = vi.spyOn(apiClient, 'deleteBaseline').mockRejectedValue(new Error('connection lost'));
+
+        await expect(taskMutationService.deleteBaseline('snapshot-1')).rejects.toThrow('connection lost');
+
+        expect(deleteBaseline).toHaveBeenCalledTimes(1);
+    });
+
     it('records thrown relation conflicts as conflict operations', async () => {
         const error = new ApiMutationError('conflict', 'stale relation', 409);
         vi.spyOn(apiClient, 'createRelation').mockRejectedValue(error);

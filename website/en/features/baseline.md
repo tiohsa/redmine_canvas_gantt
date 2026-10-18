@@ -24,6 +24,14 @@ Open the toolbar's **Save Baseline** menu and select **Show baseline comparison*
 
 Saved baseline comparison. [View full-size image](/images/baseline-compare-en.png)
 
+## Delete a saved baseline (development feature)
+
+Baseline deletion is under development and is not included in release v0.18.0. In the development version, the delete control removes the single snapshot saved for the current project, including a snapshot saved from a filtered view; it does not delete only the currently visible issues. Before deletion, a confirmation dialog shows the snapshot's save time, saver, and scope and warns that the action cannot be undone. Deletion does not change issues or their current dates.
+
+In the development version, the delete control is available to users who can manage project baselines. If another user replaces the snapshot before deletion, the dialog refreshes the current baseline and does not retry the old snapshot ID. When the server's result is uncertain, Canvas Gantt refreshes the baseline state and does not automatically send the deletion again.
+
+The confirmation dialog uses the same rounded button design as the issue dialog for Cancel and Delete.
+
 ## Permissions and storage
 
 - `view_canvas_gantt` is required to view baseline comparison.

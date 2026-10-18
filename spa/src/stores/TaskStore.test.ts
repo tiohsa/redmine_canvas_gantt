@@ -5,6 +5,7 @@ import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
 import { useUIStore } from './UIStore';
+import { useBaselineStore } from './BaselineStore';
 import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
 import { loadLastUsedSharedQueryProjectState, loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
@@ -2106,6 +2107,199 @@ describe('TaskStore API data application', () => {
 
         expect(useTaskStore.getState().dataReadStatus).toBe('ready');
         expect(useTaskStore.getState().allTasks.find(task => task.id === '1')?.subject).toBe('Remote');
+    });
+
+    it('discards a pending conflict resync after full-data invalidation without losing drafts or resurrecting a baseline', async () => {
+        const original = buildTask({ id: '1', subject: 'Server', lockVersion: 1 });
+        const baseline = {
+            snapshotId: 'baseline-before-delete', projectId: '1', capturedAt: '2026-10-18T00:00:00Z',
+            scope: 'project' as const, tasksByIssueId: {}
+        };
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce({ ...buildApiData([original]), baseline });
+        await useTaskStore.getState().refreshData();
+        useTaskStore.getState().updateTask('1', { subject: 'Local draft' });
+        const generation = useTaskStore.getState().editGenerations['1'];
+        useTaskStore.getState().registerTaskConflict('1', 'Conflict', generation, undefined, undefined, 'needs_refresh', 'unknown');
+
+        const delayed = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(delayed.promise);
+        const notification = vi.spyOn(useUIStore.getState(), 'addNotification');
+        const resolution = useTaskStore.getState().resolveTaskConflict('1', 'remote');
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+
+        // A successful DELETE clears the baseline and invalidates every older full-data read.
+        useBaselineStore.getState().setSnapshot(null);
+        useTaskStore.getState().invalidateFullDataReads();
+        delayed.resolve({ ...buildApiData([{ ...original, subject: 'Stale remote', lockVersion: 2 }]), baseline });
+        await resolution;
+
+        const state = useTaskStore.getState();
+        expect(state.dataReadStatus).toBe('ready');
+        expect(state.activeReadContext).toBeNull();
+        expect(state.allTasks.find(task => task.id === '1')?.subject).toBe('Local draft');
+        expect(state.localTaskPatches['1']?.at(-1)?.mutationIntent).toMatchObject({ subject: 'Local draft' });
+        expect(state.taskConflicts['1']).toBeDefined();
+        expect(useBaselineStore.getState().snapshot).toBeNull();
+        expect(notification).not.toHaveBeenCalled();
+    });
+
+    it('reacquires an unapplied status-filter view after invalidating its pending read', async () => {
+        const original = buildTask({ id: '1', statusId: 1, subject: 'Original' });
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([original]));
+        await useTaskStore.getState().refreshData();
+
+        const pendingFilterRead = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(pendingFilterRead.promise).mockResolvedValueOnce(
+            buildApiData([buildTask({ id: '2', statusId: 2, subject: 'Filtered result' })])
+        );
+        useTaskStore.getState().setSelectedStatusFromServer([2]);
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+        useTaskStore.getState().invalidateFullDataReads();
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(3));
+        expect(vi.mocked(apiClient.fetchData).mock.calls[2][0]).toMatchObject({ query: { selectedStatusIds: [2] } });
+        pendingFilterRead.resolve(buildApiData([buildTask({ id: '3', statusId: 1, subject: 'Stale result' })]));
+        await vi.waitFor(() => expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['2']));
+
+        expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([2]);
+    });
+
+    it('retries an invalidated pending saved query with its query context and columns', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([]));
+        await useTaskStore.getState().refreshData();
+        useUIStore.getState().applyQueryVisibleColumns(['status', 'subject']);
+
+        const pendingSavedQueryRead = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(pendingSavedQueryRead.promise).mockResolvedValueOnce({
+            ...buildApiData([buildTask({ id: 'saved', subject: 'Saved query result' })]),
+            initialState: { queryId: 12, visibleColumns: ['id', 'subject'] }
+        });
+        const applySavedQuery = useTaskStore.getState().applySavedQuery(12);
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        useTaskStore.getState().invalidateFullDataReads();
+
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(3));
+        expect(vi.mocked(apiClient.fetchData).mock.calls[2][0]).toMatchObject({
+            query: { queryId: 12 },
+            queryContext: { baseQueryId: 12 }
+        });
+        pendingSavedQueryRead.resolve(buildApiData([buildTask({ id: 'stale', subject: 'Stale saved query' })]));
+        await applySavedQuery;
+        await vi.waitFor(() => expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['saved']));
+
+        expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(useUIStore.getState().visibleColumns).toEqual(['id', 'subject']);
+        expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+    });
+
+    it('skips an automatic read for an applied view and suppresses duplicates during explicit recovery', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([]));
+        await useTaskStore.getState().refreshData();
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+
+        useTaskStore.getState().invalidateFullDataReads();
+        await Promise.resolve();
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+
+        useTaskStore.setState({ selectedStatusIds: [2] });
+        useTaskStore.getState().invalidateFullDataReads({ refreshCurrentView: false });
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        await useTaskStore.getState().refreshData();
+        await Promise.resolve();
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(apiClient.fetchData).mock.calls[1][0]).toMatchObject({ query: { selectedStatusIds: [2] } });
+        expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+    });
+
+    it('skips a queued replacement when a newer filter read starts first', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([]));
+        await useTaskStore.getState().refreshData();
+
+        useTaskStore.setState({ selectedStatusIds: [2] });
+        useTaskStore.getState().invalidateFullDataReads();
+        useTaskStore.getState().setSelectedStatusFromServer([3]);
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(apiClient.fetchData).mock.calls[1][0]).toMatchObject({ query: { selectedStatusIds: [3] } });
+    });
+
+    it('keeps local edits and reports an error when the replacement read fails', async () => {
+        const original = buildTask({ id: '1', subject: 'Original' });
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([original]));
+        await useTaskStore.getState().refreshData();
+        const staleRead = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(staleRead.promise).mockRejectedValueOnce(new Error('offline'));
+        useTaskStore.getState().setSelectedStatusFromServer([2]);
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+        useTaskStore.getState().updateTask('1', { subject: 'Local draft' });
+        useTaskStore.getState().invalidateFullDataReads();
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(3));
+        staleRead.resolve(buildApiData([original]));
+        await vi.waitFor(() => expect(useTaskStore.getState().dataReadStatus).toBe('error'));
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === '1')?.subject).toBe('Local draft');
+    });
+
+    it('checks invalidation again after mutation resync settles and before the conflict caller applies its data', async () => {
+        const original = buildTask({ id: '1', subject: 'Server', lockVersion: 1 });
+        const baseline = {
+            snapshotId: 'baseline-before-delete', projectId: '1', capturedAt: '2026-10-18T00:00:00Z',
+            scope: 'project' as const, tasksByIssueId: {}
+        };
+        useTaskStore.getState().applyApiData(buildApiData([original]));
+        useTaskStore.setState({ initialDataLoaded: true, dataReadStatus: 'ready' });
+        useBaselineStore.getState().setSnapshot(baseline);
+        useTaskStore.getState().updateTask('1', { subject: 'Local draft' });
+        const generation = useTaskStore.getState().editGenerations['1'];
+        useTaskStore.getState().registerTaskConflict('1', 'Conflict', generation, undefined, undefined, 'needs_refresh', 'unknown');
+
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce({
+            ...buildApiData([{ ...original, subject: 'Stale remote', lockVersion: 2 }]), baseline
+        });
+        let invalidated = false;
+        const unsubscribe = useTaskStore.subscribe((state) => {
+            if (invalidated || state.dataReadStatus !== 'ready' || vi.mocked(apiClient.fetchData).mock.calls.length !== 1) return;
+            invalidated = true;
+            queueMicrotask(() => {
+                useBaselineStore.getState().setSnapshot(null);
+                useTaskStore.getState().invalidateFullDataReads();
+            });
+        });
+        const notification = vi.spyOn(useUIStore.getState(), 'addNotification');
+
+        await useTaskStore.getState().resolveTaskConflict('1', 'remote');
+        unsubscribe();
+
+        const state = useTaskStore.getState();
+        expect(invalidated).toBe(true);
+        expect(state.dataReadStatus).toBe('ready');
+        expect(state.allTasks.find(task => task.id === '1')?.subject).toBe('Local draft');
+        expect(state.localTaskPatches['1']?.at(-1)?.mutationIntent).toMatchObject({ subject: 'Local draft' });
+        expect(state.taskConflicts['1']).toBeDefined();
+        expect(useBaselineStore.getState().snapshot).toBeNull();
+        expect(notification).not.toHaveBeenCalled();
+    });
+
+    it('honors full-data invalidation triggered by a loading-state subscriber before read application', async () => {
+        const original = buildTask({ id: '1', subject: 'Server' });
+        const delayed = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(delayed.promise);
+        const unsubscribe = useTaskStore.subscribe((state) => {
+            if (state.dataReadStatus === 'loading') useTaskStore.getState().invalidateFullDataReads();
+        });
+
+        const refresh = useTaskStore.getState().refreshData();
+        delayed.resolve(buildApiData([{ ...original, subject: 'Stale response' }]));
+        await expect(refresh).resolves.toEqual(expect.objectContaining({ status: 'superseded' }));
+        unsubscribe();
+
+        expect(useTaskStore.getState().dataReadStatus).toBe('idle');
+        expect(useTaskStore.getState().allTasks).toEqual([]);
     });
 
     it('settles the read status after a failed mutation resync', async () => {
