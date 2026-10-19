@@ -389,11 +389,30 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             if (!isCurrentOwner()) return false;
             useTaskStore.getState().invalidateFullDataReads({ refreshCurrentView: false });
             if (!isCurrentOwner()) return false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
             try {
-                const outcome = await useTaskStore.getState().refreshData();
-                return outcome.status === 'applied';
+                const refresh = useTaskStore.getState().refreshData()
+                    .then(outcome => ({ kind: 'settled' as const, applied: outcome.status === 'applied' }))
+                    .catch(() => ({ kind: 'settled' as const, applied: false }));
+                const refreshContext = useTaskStore.getState().getActiveReadContext();
+                const outcome = await Promise.race([
+                    refresh,
+                    new Promise<{ kind: 'timeout' }>(resolve => {
+                        timeout = setTimeout(() => resolve({ kind: 'timeout' }), 10_000);
+                    })
+                ]);
+                if (outcome.kind === 'timeout') {
+                    const taskStore = useTaskStore.getState();
+                    if (isCurrentOwner() && refreshContext && taskStore.getActiveReadContext() === refreshContext) {
+                        taskStore.invalidateFullDataReads({ refreshCurrentView: false });
+                    }
+                    return false;
+                }
+                return outcome.applied;
             } catch {
                 return false;
+            } finally {
+                if (timeout !== undefined) clearTimeout(timeout);
             }
         };
 

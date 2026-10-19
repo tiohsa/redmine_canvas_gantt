@@ -84,7 +84,13 @@ export const BaselineDeleteConfirmation: React.FC<BaselineDeleteConfirmationProp
     const confirm = async () => {
         if (confirming) return;
         setConfirming(true);
-        await onConfirm(snapshot.snapshotId);
+        try {
+            await onConfirm(snapshot.snapshotId);
+        } catch {
+            // The owner reports mutation failures; always release the dialog controls.
+        } finally {
+            setConfirming(false);
+        }
     };
 
     const scope = snapshot.scope === 'project'

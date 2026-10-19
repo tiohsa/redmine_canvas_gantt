@@ -520,6 +520,127 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().showBaseline).toBe(false);
     });
 
+    it('keeps the snapshot and releases the dialog when reconciliation times out', async () => {
+        vi.useFakeTimers();
+        const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline).mockRejectedValue(new Error('network unavailable'));
+        let resolveLateRead!: (data: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        vi.mocked(apiClient.fetchData).mockImplementationOnce(() => new Promise(resolve => { resolveLateRead = resolve; }));
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        const invalidation = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+
+        try {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+            expect(deleteBaselineMock).toHaveBeenCalledTimes(1);
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+            expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+            expect(useBaselineStore.getState()).toMatchObject({
+                snapshot: baselineSnapshot('baseline-1'),
+                hasBaseline: true,
+                saveStatus: 'error',
+                lastError: expect.any(String)
+            });
+            expect(invalidation).toHaveBeenCalledWith({ refreshCurrentView: false });
+            expect(invalidation).toHaveBeenCalledTimes(2);
+
+            await act(async () => {
+                resolveLateRead({
+                    tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] },
+                    statuses: [], customFields: [], project: { id: '1', name: 'Project' },
+                    permissions: { editable: true, viewable: true, baselineEditable: true }, baseline: null,
+                    warnings: []
+                });
+                await Promise.resolve();
+            });
+            expect(useTaskStore.getState().getActiveReadContext()).toBeNull();
+            expect(useBaselineStore.getState()).toMatchObject({
+                snapshot: baselineSnapshot('baseline-1'),
+                hasBaseline: true
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not invalidate a newer read context when the older reconciliation times out', async () => {
+        vi.useFakeTimers();
+        vi.mocked(apiClient.deleteBaseline).mockRejectedValue(new Error('network unavailable'));
+        let resolveOldRead!: (data: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        let resolveNewRead!: (data: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        vi.mocked(apiClient.fetchData)
+            .mockImplementationOnce(() => new Promise(resolve => { resolveOldRead = resolve; }))
+            .mockImplementationOnce(() => new Promise(resolve => { resolveNewRead = resolve; }));
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        const invalidate = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+        const fetchedData = {
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] },
+            statuses: [], customFields: [], project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            baseline: baselineSnapshot('baseline-1'), warnings: []
+        } satisfies Awaited<ReturnType<typeof apiClient.fetchData>>;
+
+        try {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+            let newerRead!: ReturnType<ReturnType<typeof useTaskStore.getState>['refreshData']>;
+            act(() => { newerRead = useTaskStore.getState().refreshData(); });
+            const newerContext = useTaskStore.getState().getActiveReadContext();
+            expect(newerContext).not.toBeNull();
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(2);
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+            expect(useTaskStore.getState().getActiveReadContext()).toBe(newerContext);
+            expect(invalidate).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                resolveOldRead(fetchedData);
+                await Promise.resolve();
+            });
+            expect(useTaskStore.getState().getActiveReadContext()).toBe(newerContext);
+            expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+
+            await act(async () => {
+                resolveNewRead(fetchedData);
+                await newerRead;
+            });
+            expect((await newerRead).status).toBe('applied');
+            expect(useTaskStore.getState().getActiveReadContext()).toBe(newerContext);
+            expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+            expect(useBaselineStore.getState()).toMatchObject({
+                snapshot: baselineSnapshot('baseline-1'),
+                hasBaseline: true
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('preserves a newer baseline and its warnings when the confirmed snapshot is deleted', async () => {
         let finishDelete!: () => void;
         const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline).mockImplementation(async () => {

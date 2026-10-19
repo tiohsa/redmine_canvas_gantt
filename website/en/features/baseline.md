@@ -32,6 +32,8 @@ In the development version, the delete control is available to users who can man
 
 The confirmation dialog uses the same rounded button design as the issue dialog for Cancel and Delete.
 
+In the development version, a deletion request times out after 15 seconds, followed by up to 10 seconds of checking the server state. A timeout does not prove that deletion failed. If the result still cannot be confirmed, an error notification appears and the confirmation dialog closes so you can continue using the chart. The displayed snapshot is retained until a current server response confirms its state; the deletion request is not automatically retried.
+
 ## Permissions and storage
 
 - `view_canvas_gantt` is required to view baseline comparison.

@@ -1,4 +1,5 @@
 require_relative '../../spec_helper'
+require 'timeout'
 require_relative '../../../lib/redmine_canvas_gantt/baseline_task_state'
 require_relative '../../../lib/redmine_canvas_gantt/baseline_snapshot'
 require_relative '../../../lib/redmine_canvas_gantt/baseline_repository'
@@ -175,6 +176,69 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
         stored = Setting.find_by!(name: described_class::SETTING_NAME).value
         expect(stored.fetch('baseline_snapshots').fetch('1').fetch('snapshot_id'))
           .to be_in(%w[baseline-a baseline-b])
+      end
+
+      it 'preserves a concurrent replacement when a delete races on independent database connections' do
+        initial_repository = described_class.new(settings_reader: Setting)
+        initial_repository.replace(project_id: 1, snapshot: concurrent_snapshot(1, 'baseline-old'))
+
+        ready = Queue.new
+        start = Queue.new
+        connections = Queue.new
+        results = Queue.new
+        operations = []
+        begin
+          Setting.transaction do
+            Setting.lock.find_by!(name: described_class::SETTING_NAME)
+            operations = [
+              Thread.new do
+                Setting.connection_pool.with_connection do
+                  connections << Setting.connection.object_id
+                  repository = described_class.new(settings_reader: Setting)
+                  ready << true
+                  start.pop
+                  begin
+                    results << repository.delete(project_id: 1, expected_snapshot_id: 'baseline-old')
+                  rescue described_class::SnapshotConflict, described_class::SnapshotNotFound
+                    results << :stale_delete_rejected
+                  end
+                end
+              end,
+              Thread.new do
+                Setting.connection_pool.with_connection do
+                  connections << Setting.connection.object_id
+                  repository = described_class.new(settings_reader: Setting)
+                  ready << true
+                  start.pop
+                  repository.replace(project_id: 1, snapshot: concurrent_snapshot(1, 'baseline-new'))
+                  results << :saved
+                end
+              end
+            ]
+
+            2.times { Timeout.timeout(5) { ready.pop } }
+            expect(2.times.map { connections.pop }.uniq.length).to eq(2)
+            2.times { start << true }
+            sleep 0.1
+            expect(results).to be_empty
+          end
+        ensure
+          2.times { start << true } if operations.any?
+          operations.each { |thread| thread.join(5) }
+          operations.each { |thread| thread.kill if thread.alive? }
+          operations.each { |thread| thread.join(5) }
+          Setting.connection_pool.release_connection
+        end
+        operations.each do |thread|
+          expect(thread).not_to be_alive, 'database race worker did not stop after lock release'
+          thread.value
+        end
+        operation_results = 2.times.map { Timeout.timeout(5) { results.pop } }
+
+        Setting.clear_cache
+        stored = Setting.find_by!(name: described_class::SETTING_NAME).value
+        expect(operation_results).to include(:saved)
+        expect(stored.fetch('baseline_snapshots').fetch('1').fetch('snapshot_id')).to eq('baseline-new')
       end
     end
   end

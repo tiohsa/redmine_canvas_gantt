@@ -1097,6 +1097,50 @@ describe('apiClient.deleteBaseline', () => {
         });
     });
 
+    it('aborts a hanging DELETE after the request timeout without retrying it', async () => {
+        vi.useFakeTimers();
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        }));
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const deletion = apiClient.deleteBaseline('baseline-2');
+        const rejection = expect(deletion).rejects.toMatchObject({ name: 'AbortError' });
+        await vi.advanceTimersByTimeAsync(14_999);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await rejection;
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('releases the DELETE timeout timer after a successful acknowledgement', async () => {
+        vi.useFakeTimers();
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'ok', completeness: 'complete', baseline: null, deleted_snapshot_id: 'baseline-2' })
+        }) as unknown as typeof fetch);
+
+        await apiClient.deleteBaseline('baseline-2');
+
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('releases the DELETE timeout timer after a network failure', async () => {
+        vi.useFakeTimers();
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('connection lost')) as unknown as typeof fetch);
+
+        await expect(apiClient.deleteBaseline('baseline-2')).rejects.toThrow();
+
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it.each([
         { label: 'missing status', body: { completeness: 'complete', baseline: null, deleted_snapshot_id: 'baseline-2' } },
         { label: 'partial completion', body: { status: 'ok', completeness: 'partial', baseline: null, deleted_snapshot_id: 'baseline-2' } },

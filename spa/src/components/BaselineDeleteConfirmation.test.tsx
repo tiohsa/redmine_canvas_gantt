@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { BaselineDeleteConfirmation } from './BaselineDeleteConfirmation';
@@ -25,6 +25,8 @@ const Harness: React.FC<{
 );
 
 describe('BaselineDeleteConfirmation', () => {
+    afterEach(() => vi.useRealTimers());
+
     it('opens as an alertdialog, focuses Cancel, traps Tab, and restores focus to the trigger', () => {
         const onCancel = vi.fn();
         const { rerender } = render(<Harness onCancel={onCancel} />);
@@ -65,6 +67,20 @@ describe('BaselineDeleteConfirmation', () => {
         expect(dialog).toHaveFocus();
 
         await act(async () => finish());
+    });
+
+    it('releases the confirming state if the owner unexpectedly rejects', async () => {
+        const onConfirm = vi.fn().mockRejectedValue(new Error('unexpected failure'));
+        render(<Harness onConfirm={onConfirm} />);
+
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            await Promise.resolve();
+        });
+
+        expect(onConfirm).toHaveBeenCalledWith('snapshot-1');
+        expect(screen.getByTestId('baseline-delete-confirm-button')).toBeEnabled();
+        expect(screen.getByTestId('baseline-delete-confirm-button')).toHaveTextContent('Delete');
     });
 
     it('keeps long content inside a viewport-bounded, scrollable panel', () => {

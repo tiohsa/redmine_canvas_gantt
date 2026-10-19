@@ -329,6 +329,68 @@ test.describe('baseline deletion', () => {
     expect(deleteCount).toBe(1);
   });
 
+  test('releases the dialog after DELETE and reconciliation timeouts while preserving the snapshot', async ({ page }) => {
+    await page.clock.install();
+    await setupMockApp(page);
+    await installBaselineData(page, true);
+
+    let deleteCount = 0;
+    let deleteRequested = false;
+    let finishDeleteRoute: (() => void) | undefined;
+    let startDelete!: () => void;
+    const deleteStarted = new Promise<void>((resolve) => { startDelete = resolve; });
+    await page.route('**/canvas_gantt/baseline.json', async (route) => {
+      if (route.request().method() !== 'DELETE') return route.fallback();
+      deleteCount += 1;
+      deleteRequested = true;
+      startDelete();
+      await new Promise<void>((resolve) => { finishDeleteRoute = resolve; });
+    });
+
+    let finishRefreshRoute: (() => void) | undefined;
+    let refreshBlocked = false;
+    let startRefresh!: () => void;
+    const refreshStarted = new Promise<void>((resolve) => { startRefresh = resolve; });
+    await page.route('**/canvas_gantt/data.json**', async (route) => {
+      if (!deleteRequested || refreshBlocked) return route.fallback();
+      refreshBlocked = true;
+      startRefresh();
+      await new Promise<void>((resolve) => { finishRefreshRoute = resolve; });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...defaultMockData, baseline: baselineSnapshot }),
+      });
+    });
+
+    try {
+      await waitForInitialRender(page);
+      await openBaselineDeleteDialog(page);
+      await page.getByTestId('baseline-delete-confirm-button').click();
+      await deleteStarted;
+
+      await page.clock.fastForward(15_000);
+      await refreshStarted;
+      await page.clock.fastForward(10_000);
+
+      await expect(page.getByRole('alertdialog')).toHaveCount(0);
+      await expect(page.getByText('Could not confirm whether the baseline was deleted.')).toBeVisible();
+      const baselineState = await page.evaluate(async () => {
+        const { useBaselineStore } = await import('/src/stores/BaselineStore.ts');
+        const { snapshot, hasBaseline } = useBaselineStore.getState();
+        return { snapshotId: snapshot?.snapshotId, hasBaseline };
+      });
+      expect(baselineState).toEqual({ snapshotId: baselineSnapshot.snapshot_id, hasBaseline: true });
+      expect(deleteCount).toBe(1);
+
+      await page.getByTestId('baseline-save-menu-button').click();
+      await expect(page.getByTestId('baseline-delete-button')).toBeVisible();
+    } finally {
+      finishDeleteRoute?.();
+      finishRefreshRoute?.();
+    }
+  });
+
   test('refreshes server state after a 5xx unknown result without resending DELETE', async ({ page }) => {
     let serverSnapshot = baselineSnapshot;
     const updatedSnapshot = { ...baselineSnapshot, snapshot_id: 'baseline-snapshot-2', captured_by_name: 'Recovered User' };

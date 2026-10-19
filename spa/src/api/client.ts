@@ -859,35 +859,42 @@ export const apiClient = {
             throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
         }
 
-        const response = await sessionFetch(url.toString(), {
-            method: 'DELETE',
-            headers: buildJsonHeaders(config, true),
-            body: JSON.stringify({ snapshot_id: snapshotId })
-        });
-
-        if (!response.ok) throw await parseMutationError(response);
-
-        let payload: unknown;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
         try {
-            payload = await readJson(response);
-        } catch (error) {
-            if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') throw error;
-            throw new ApiMutationError(
-                'protocol_error',
-                i18n.t('label_invalid_response') || 'Invalid response',
-                response.status
-            );
-        }
+            const response = await sessionFetch(url.toString(), {
+                method: 'DELETE',
+                headers: buildJsonHeaders(config, true),
+                body: JSON.stringify({ snapshot_id: snapshotId }),
+                signal: controller.signal
+            });
 
-        const result = parseBaselineDeleteResult(payload, snapshotId);
-        if (!result) {
-            throw new ApiMutationError(
-                'protocol_error',
-                i18n.t('label_invalid_response') || 'Invalid response',
-                response.status
-            );
+            if (!response.ok) throw await parseMutationError(response);
+
+            let payload: unknown;
+            try {
+                payload = await readJson(response);
+            } catch (error) {
+                if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') throw error;
+                throw new ApiMutationError(
+                    'protocol_error',
+                    i18n.t('label_invalid_response') || 'Invalid response',
+                    response.status
+                );
+            }
+
+            const result = parseBaselineDeleteResult(payload, snapshotId);
+            if (!result) {
+                throw new ApiMutationError(
+                    'protocol_error',
+                    i18n.t('label_invalid_response') || 'Invalid response',
+                    response.status
+                );
+            }
+            return result;
+        } finally {
+            clearTimeout(timeout);
         }
-        return result;
     },
 
     fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number, draftIntent?: Record<string, unknown>): Promise<TaskEditMeta> => {
