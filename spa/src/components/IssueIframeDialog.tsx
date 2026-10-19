@@ -18,7 +18,6 @@ import { DEFAULT_ISSUE_DIALOG_WIDTH_PX } from '../utils/preferences';
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
 const MIN_TIME_ENTRY_DIALOG_HEIGHT_PX = 420;
-const MIN_LEGACY_DIALOG_WIDTH_PX = 800;
 
 type DialogSizeTarget = 'issue' | 'time-entry' | 'query' | 'other';
 
@@ -987,7 +986,7 @@ export const IssueIframeDialog: React.FC = () => {
                 style={{
                     width: `${isFullScreenIssueDialog ? viewportSize.width : effectiveDialogWidthPx}px`,
                     maxWidth: isFullScreenIssueDialog ? '100vw' : '98vw',
-                    minWidth: dialogSizeTarget === 'issue' ? 0 : `${MIN_LEGACY_DIALOG_WIDTH_PX}px`,
+                    minWidth: 0,
                     height: `${isFullScreenIssueDialog ? viewportSize.height : configuredDialogHeightPx ?? dialogHeightPx ?? maxDialogHeightPx}px`,
                     maxHeight: `${isFullScreenIssueDialog ? viewportSize.height : maxDialogHeightPx}px`,
                     minHeight: 0,

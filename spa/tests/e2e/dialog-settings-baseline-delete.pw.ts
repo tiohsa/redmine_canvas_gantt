@@ -50,7 +50,15 @@ const routeIssuePages = async (page: Page) => {
     await route.fulfill({
       status: 200,
       contentType: 'text/html',
-      body: '<html><body><main id="content" style="height:120px"><form id="new_time_entry"><input name="time_entry[hours]" value="1"></form></main></body></html>',
+      body: '<html><body><main id="content" style="height:120px"><form id="new_time_entry" action="/issues/101/time_entries" method="post"><input name="time_entry[hours]" value="1"><input type="submit" value="Save"></form></main></body></html>',
+    });
+  });
+  await page.route('**/issues/101/time_entries', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<html><body><main id="content"><h2>Time entry saved</h2></main></body></html>',
     });
   });
 };
@@ -155,6 +163,83 @@ test.describe('issue dialog display settings', () => {
     expect(bounds!.width).toBeLessThanOrEqual(375 * 0.98 + 1);
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+  });
+
+  test('keeps Time Entry and Query dialogs within narrow, boundary, and desktop viewports', async ({ page }) => {
+    await routeIssuePages(page);
+    await page.route('**/queries/1', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<html><body><main id="content"><form id="query_form" action="/queries/1" method="post"><input name="query[name]"><button type="submit">Apply</button></form></main></body></html>',
+      });
+    });
+    await page.route('**/queries/1', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      await route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body><main id="content">Query applied</main></body></html>' });
+    });
+    await setupMockApp(page);
+    await waitForInitialRender(page);
+
+    const panel = page.getByTestId('issue-dialog-panel');
+    const expectPanelInViewport = async (width: number) => {
+      const bounds = await panel.boundingBox();
+      expect(bounds, `dialog should have bounds at ${width}px`).toBeTruthy();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      expect(bounds!.width).toBeLessThanOrEqual(width * 0.98 + 1);
+    };
+
+    for (const width of [375, 799, 800, 801]) {
+      await page.setViewportSize({ width, height: 760 });
+      await openIssueDialog(page);
+      await page.frameLocator('iframe').getByRole('link', { name: 'Log time' }).click();
+      await expect(panel).toHaveAttribute('data-dialog-size-target', 'time-entry');
+      await expectPanelInViewport(width);
+      const hours = page.frameLocator('iframe').locator('input[name="time_entry[hours]"]');
+      await expect(hours).toBeVisible();
+      await hours.fill('2');
+      const timeEntryPost = page.waitForRequest((request) => (
+        request.method() === 'POST' && new URL(request.url()).pathname === '/issues/101/time_entries'
+      ));
+      await hours.press('Enter');
+      const timeEntryRequest = await timeEntryPost;
+      expect(timeEntryRequest.postData()).toContain('time_entry%5Bhours%5D=2');
+      await page.getByRole('button', { name: 'Close issue dialog' }).click();
+      await expect(panel).toHaveCount(0);
+
+      await page.evaluate(async () => {
+        const { useUIStore } = await import('/src/stores/UIStore.ts');
+        useUIStore.getState().openQueryDialog('/queries/1');
+      });
+      await expect(panel).toHaveAttribute('data-dialog-size-target', 'query');
+      await expectPanelInViewport(width);
+      await expect(page.frameLocator('iframe').locator('input[name="query[name]"]')).toBeVisible();
+      await page.frameLocator('iframe').locator('input[name="query[name]"]').fill('narrow query');
+      await expect(page.frameLocator('iframe').getByRole('button', { name: 'Apply' })).toBeVisible();
+      const queryPost = page.waitForRequest((request) => (
+        request.method() === 'POST' && new URL(request.url()).pathname === '/queries/1'
+      ));
+      await page.frameLocator('iframe').getByRole('button', { name: 'Apply' }).click();
+      expect((await queryPost).postData()).toContain('narrow+query');
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+    }
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openIssueDialog(page);
+    await page.frameLocator('iframe').getByRole('link', { name: 'Log time' }).click();
+    await expect(panel).toHaveAttribute('data-dialog-size-target', 'time-entry');
+    await expect.poll(async () => (await panel.boundingBox())?.width).toBe(1200);
+    await expectPanelInViewport(1280);
+    await page.getByRole('button', { name: 'Close issue dialog' }).click();
+    await page.evaluate(async () => {
+      const { useUIStore } = await import('/src/stores/UIStore.ts');
+      useUIStore.getState().openQueryDialog('/queries/1');
+    });
+    await expect(panel).toHaveAttribute('data-dialog-size-target', 'query');
+    await expect.poll(async () => (await panel.boundingBox())?.width).toBe(1200);
+    await expectPanelInViewport(1280);
   });
 });
 

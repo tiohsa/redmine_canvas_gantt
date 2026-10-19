@@ -138,6 +138,35 @@ describe('IssueIframeDialog', () => {
         Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
     });
 
+    it.each([
+        ['time-entry', 375],
+        ['time-entry', 799],
+        ['time-entry', 800],
+        ['time-entry', 1280],
+        ['query', 375],
+        ['query', 799],
+        ['query', 800],
+        ['query', 1280]
+    ] as const)('applies viewport width without issue fullscreen settings for %s at %ipx', (target, width) => {
+        const originalWidth = window.innerWidth;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+        useUIStore.setState({ issueDialogWidthPx: 1500, issueDialogFullScreen: true });
+        if (target === 'time-entry') {
+            useUIStore.setState({ issueDialogUrl: '/issues/123/time_entries/new', queryDialogUrl: null });
+        } else {
+            useUIStore.setState({ issueDialogUrl: null, queryDialogUrl: '/queries/1' });
+        }
+
+        render(<IssueIframeDialog />);
+
+        const panel = screen.getByTestId('issue-dialog-panel');
+        const expectedWidth = Math.min(1200, width * 0.98);
+        expect(panel).toHaveAttribute('data-dialog-size-target', target);
+        expect(panel).toHaveAttribute('data-dialog-full-screen', 'false');
+        expect(panel).toHaveStyle({ width: `${expectedWidth}px`, maxWidth: '98vw', minWidth: '0' });
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+    });
+
     it('fills and tracks the viewport for issue dialogs, then restores normal sizing for other dialog routes', async () => {
         const originalWidth = window.innerWidth;
         const originalHeight = window.innerHeight;
@@ -176,7 +205,7 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
         await waitFor(() => expect(panel).toHaveAttribute('data-dialog-size-target', 'time-entry'));
         expect(panel).toHaveAttribute('data-dialog-full-screen', 'false');
-        expect(panel).toHaveStyle({ width: '1003.52px', maxWidth: '98vw', borderRadius: '13px' });
+        expect(panel).toHaveStyle({ width: '1003.52px', maxWidth: '98vw', minWidth: '0', borderRadius: '13px' });
 
         location.href = 'http://example.com/issues/123/edit';
         fireEvent.load(iframe);
@@ -194,7 +223,7 @@ describe('IssueIframeDialog', () => {
         useUIStore.setState({ queryDialogUrl: '/queries/1' });
         await waitFor(() => expect(panel).toHaveAttribute('data-dialog-size-target', 'query'));
         expect(panel).toHaveAttribute('data-dialog-full-screen', 'false');
-        expect(panel).toHaveStyle({ maxWidth: '98vw', borderRadius: '13px' });
+        expect(panel).toHaveStyle({ maxWidth: '98vw', minWidth: '0', borderRadius: '13px' });
         Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
         Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight });
     });
