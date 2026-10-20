@@ -206,6 +206,34 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
     };
 
     const projectId = window.RedmineCanvasGantt?.projectId;
+    const menuRef = React.useRef<HTMLDivElement>(null);
+
+    React.useLayoutEffect(() => {
+        const anchor = displaySettingsMenuRef.current;
+        const menu = menuRef.current;
+        if (!showDisplaySettingsMenu || !anchor || !menu) return;
+
+        const updatePosition = () => {
+            const anchorBounds = anchor.getBoundingClientRect();
+            const menuWidth = menu.getBoundingClientRect().width;
+            const viewportWidth = document.documentElement.clientWidth;
+            // Prefer right alignment, but keep the panel inside both viewport edges.
+            const left = Math.max(12, Math.min(anchorBounds.right - menuWidth, viewportWidth - menuWidth - 12));
+            menu.style.right = `${anchorBounds.right - left - menuWidth}px`;
+        };
+
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+        observer?.observe(menu);
+        const toolbar = anchor.closest('.gantt-toolbar');
+        if (toolbar) observer?.observe(toolbar);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            observer?.disconnect();
+        };
+    }, [displaySettingsMenuRef, showDisplaySettingsMenu]);
+
     const setShareAcrossProjects = (shareAcrossProjects: boolean) => {
         const snapshot = buildStoredDisplayPreferences({
             zoomLevel,
@@ -293,6 +321,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
 
             {showDisplaySettingsMenu && (
                 <div
+                    ref={menuRef}
                     data-testid="display-settings-menu"
                     style={{
                         position: 'absolute',

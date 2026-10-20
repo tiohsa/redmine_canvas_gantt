@@ -80,3 +80,32 @@ for (const width of [1280, 375]) {
     });
   }
 }
+
+test('keeps the open display settings menu in the viewport across toolbar reflows', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 760 });
+  await setupMockApp(page);
+  await waitForInitialRender(page);
+  const button = page.getByTestId('display-settings-menu-button');
+  const menu = page.getByTestId('display-settings-menu');
+  await button.click();
+
+  for (const width of [1920, 1280, 768, 375, 1920]) {
+    await page.setViewportSize({ width, height: 760 });
+    await expect(menu).toBeVisible();
+    await expect.poll(async () => {
+      const bounds = await menu.boundingBox();
+      return bounds !== null && bounds.x >= 12 && bounds.x + bounds.width <= width - 12;
+    }).toBe(true);
+    const buttonBounds = await button.boundingBox();
+    const menuBounds = await menu.boundingBox();
+    expect(menuBounds!.y).toBeGreaterThanOrEqual(buttonBounds!.y + buttonBounds!.height);
+  }
+
+  await page.mouse.click(1910, 750);
+  await expect(menu).toBeHidden();
+  await button.click();
+  await expect(menu).toBeVisible();
+  const reopenedBounds = await menu.boundingBox();
+  expect(reopenedBounds!.x).toBeGreaterThanOrEqual(12);
+  expect(reopenedBounds!.x + reopenedBounds!.width).toBeLessThanOrEqual(1908);
+});

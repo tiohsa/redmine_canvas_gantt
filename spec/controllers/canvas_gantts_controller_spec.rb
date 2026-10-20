@@ -1262,7 +1262,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     it 'rejects a non-string snapshot ID before reaching the repository' do
       expect(baseline_repository).not_to receive(:delete)
 
-      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 123 }, format: :json
+      # Form encoding stringifies numbers; JSON preserves the invalid input type.
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 123 }, as: :json
 
       expect(response).to have_http_status(:unprocessable_entity)
     end
