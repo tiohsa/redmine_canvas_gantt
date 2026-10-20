@@ -1207,6 +1207,104 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe 'DELETE #delete_baseline' do
+    let(:baseline_repository) { instance_double(RedmineCanvasGantt::BaselineRepository) }
+    let(:current_user) { instance_double(User, id: 7, name: 'Alice', logged?: true, login: 'alice', language: 'en') }
+
+    before do
+      allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
+      allow(User).to receive(:current).and_return(current_user)
+      allow(current_user).to receive(:allowed_to?).and_return(false)
+      allow(current_user).to receive(:allowed_to?).with(:manage_canvas_gantt_baseline, project).and_return(true)
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
+      end
+    end
+
+    it 'deletes the expected snapshot and returns the semantic success payload' do
+      allow(baseline_repository).to receive(:delete)
+        .with(project_id: 1, expected_snapshot_id: 'baseline-1').and_return('baseline-1')
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 'baseline-1' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to include(
+        'status' => 'ok', 'completeness' => 'complete', 'baseline' => nil,
+        'deleted_snapshot_id' => 'baseline-1'
+      )
+    end
+
+    it 'returns not found when the project has no baseline' do
+      allow(baseline_repository).to receive(:delete)
+        .and_raise(RedmineCanvasGantt::BaselineRepository::SnapshotNotFound)
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 'baseline-1' }, format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body)).to include(
+        'status' => 'not_found', 'failure' => include('resource_type' => 'baseline')
+      )
+    end
+
+    it 'returns conflict when the current baseline changed after it was read' do
+      allow(baseline_repository).to receive(:delete)
+        .and_raise(RedmineCanvasGantt::BaselineRepository::SnapshotConflict)
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 'baseline-old' }, format: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(JSON.parse(response.body)).to include(
+        'status' => 'conflict',
+        'failure' => include('resource_type' => 'baseline', 'remote_availability' => 'needs_refresh')
+      )
+    end
+
+    it 'rejects a non-string snapshot ID before reaching the repository' do
+      expect(baseline_repository).not_to receive(:delete)
+
+      # Form encoding stringifies numbers; JSON preserves the invalid input type.
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 123 }, as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+
+    it 'rejects a whitespace-padded snapshot ID before reaching the repository' do
+      expect(baseline_repository).not_to receive(:delete)
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: ' baseline-1' }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+
+    it 'rejects control characters in a snapshot ID before reaching the repository' do
+      expect(baseline_repository).not_to receive(:delete)
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: "bad\nid" }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+
+    it 'requires baseline management permission' do
+      allow(current_user).to receive(:allowed_to?).with(:manage_canvas_gantt_baseline, project).and_return(false)
+      expect(baseline_repository).not_to receive(:delete)
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 'baseline-1' }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it 'requires Canvas Gantt view permission before baseline management' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: false, viewable: false, baseline_editable: true })
+      end
+      expect(baseline_repository).not_to receive(:delete)
+
+      delete :delete_baseline, params: { project_id: 'demo', snapshot_id: 'baseline-1' }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
   describe '#visible_baseline_snapshot' do
     it 'excludes private, permission-revoked, and hidden-subproject issue states from the payload' do
       snapshot = RedmineCanvasGantt::BaselineSnapshot.new(

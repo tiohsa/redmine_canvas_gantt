@@ -13,10 +13,10 @@ Redmine::Plugin.register :redmine_canvas_gantt do
       canvas_gantts: [
         :index, :data, :queries, :edit_meta, :update, :destroy_task,
         :bulk_create_subtasks, :subtask_trackers, :create_relation,
-        :update_relation, :destroy_relation, :save_baseline, :schedule_mutation
+        :update_relation, :destroy_relation, :save_baseline, :delete_baseline, :schedule_mutation
       ]
     }
-    permission :manage_canvas_gantt_baseline, { canvas_gantts: [:save_baseline] }
+    permission :manage_canvas_gantt_baseline, { canvas_gantts: [:save_baseline, :delete_baseline] }
   end
 
   menu :project_menu, :canvas_gantt, { controller: 'canvas_gantts', action: 'index' }, caption: 'Canvas Gantt', after: :gantt, param: :project_id

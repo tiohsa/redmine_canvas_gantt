@@ -347,6 +347,21 @@ export const taskMutationService = {
         );
     },
 
+    deleteBaseline: (snapshotId: string, executionGuard?: () => void) => {
+        const config = window.RedmineCanvasGantt;
+        const apiBase = config?.apiBase;
+        const projectId = config?.projectId ?? 'unknown';
+        return enqueueMutationOperation(
+            [`baseline:${projectId}:delete`],
+            () => {
+                executionGuard?.();
+                return apiClient.deleteBaseline(snapshotId, apiBase);
+            },
+            undefined,
+            [baselineProjectResourceKey(projectId)]
+        );
+    },
+
     updateTaskFields: (
         taskId: string,
         fields: TaskFieldsFactory,

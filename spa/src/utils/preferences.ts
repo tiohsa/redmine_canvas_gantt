@@ -5,6 +5,10 @@ import type { ColumnConfig } from '../components/sidebar/sidebarColumnSettings';
 type StoredViewport = Pick<Viewport, 'startDate' | 'scrollX' | 'scrollY' | 'scale'>;
 
 export interface StoredPreferences {
+    issueDialogWidthPx?: IssueDialogWidthPx;
+    issueDialogHeightMode?: IssueDialogHeightMode;
+    issueDialogHeightPercent?: number;
+    issueDialogFullScreen?: boolean;
     zoomLevel?: ZoomLevel;
     viewMode?: ViewMode;
     viewport?: Partial<StoredViewport>;
@@ -43,7 +47,19 @@ export interface StoredPreferences {
 
 export type DisplayPreferencesSource = 'project' | 'global' | 'default';
 
+export type IssueDialogWidthPx = 900 | 1200 | 1500;
+export type IssueDialogHeightMode = 'auto' | 'fixed';
+
+export const DEFAULT_ISSUE_DIALOG_WIDTH_PX: IssueDialogWidthPx = 1200;
+export const DEFAULT_ISSUE_DIALOG_HEIGHT_MODE: IssueDialogHeightMode = 'auto';
+export const DEFAULT_ISSUE_DIALOG_HEIGHT_PERCENT = 80;
+export const DEFAULT_ISSUE_DIALOG_FULL_SCREEN = false;
+
 export interface StoredDisplayPreferences {
+    issueDialogWidthPx?: IssueDialogWidthPx;
+    issueDialogHeightMode?: IssueDialogHeightMode;
+    issueDialogHeightPercent?: number;
+    issueDialogFullScreen?: boolean;
     zoomLevel?: ZoomLevel;
     viewMode?: ViewMode;
     viewport?: Partial<StoredViewport>;
@@ -90,6 +106,10 @@ export interface LoadedDisplayPreferences {
 
 export type DisplayPreferencesSnapshot = Pick<
     StoredPreferences,
+    | 'issueDialogWidthPx'
+    | 'issueDialogHeightMode'
+    | 'issueDialogHeightPercent'
+    | 'issueDialogFullScreen'
     | 'zoomLevel'
     | 'viewMode'
     | 'viewport'
@@ -131,6 +151,10 @@ export type GeneralPreferencesSnapshot = Pick<
 
 const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Object.fromEntries(
     Object.entries({
+        issueDialogWidthPx: prefs.issueDialogWidthPx,
+        issueDialogHeightMode: prefs.issueDialogHeightMode,
+        issueDialogHeightPercent: prefs.issueDialogHeightPercent,
+        issueDialogFullScreen: typeof prefs.issueDialogFullScreen === 'boolean' ? prefs.issueDialogFullScreen : undefined,
         zoomLevel: prefs.zoomLevel,
         viewMode: prefs.viewMode,
         viewport: prefs.viewport,
@@ -170,6 +194,20 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
 
 const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPreferences => Object.fromEntries(
     Object.entries({
+        issueDialogWidthPx: prefs.issueDialogWidthPx === 900 || prefs.issueDialogWidthPx === 1200 || prefs.issueDialogWidthPx === 1500
+            ? prefs.issueDialogWidthPx
+            : (prefs.issueDialogWidthPx === undefined ? undefined : DEFAULT_ISSUE_DIALOG_WIDTH_PX),
+        issueDialogHeightMode: prefs.issueDialogHeightMode === 'auto' || prefs.issueDialogHeightMode === 'fixed'
+            ? prefs.issueDialogHeightMode
+            : (prefs.issueDialogHeightMode === undefined ? undefined : DEFAULT_ISSUE_DIALOG_HEIGHT_MODE),
+        issueDialogHeightPercent: typeof prefs.issueDialogHeightPercent === 'number'
+            && Number.isInteger(prefs.issueDialogHeightPercent)
+            && prefs.issueDialogHeightPercent >= 50
+            && prefs.issueDialogHeightPercent <= 90
+            && prefs.issueDialogHeightPercent % 5 === 0
+            ? prefs.issueDialogHeightPercent
+            : (prefs.issueDialogHeightPercent === undefined ? undefined : DEFAULT_ISSUE_DIALOG_HEIGHT_PERCENT),
+        issueDialogFullScreen: typeof prefs.issueDialogFullScreen === 'boolean' ? prefs.issueDialogFullScreen : undefined,
         zoomLevel: prefs.zoomLevel,
         viewMode: prefs.viewMode,
         viewport: prefs.viewport,

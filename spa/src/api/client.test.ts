@@ -1044,6 +1044,140 @@ describe('apiClient.saveBaseline', () => {
     });
 });
 
+describe('apiClient.deleteBaseline', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        configureBusinessCalendar(null);
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('sends a same-origin JSON DELETE with CSRF protection and validates the complete acknowledgement', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'csrf-token',
+            apiKey: 'must-not-be-sent'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok',
+                completeness: 'complete',
+                baseline: null,
+                deleted_snapshot_id: 'baseline-2',
+                deleted_entity_ids: ['baseline-2']
+            })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const result = await apiClient.deleteBaseline('baseline-2');
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://localhost:3000/projects/1/canvas_gantt/baseline.json',
+            expect.objectContaining({
+                method: 'DELETE',
+                credentials: 'same-origin',
+                body: JSON.stringify({ snapshot_id: 'baseline-2' })
+            })
+        );
+        const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+        const headers = new Headers(request.headers);
+        expect(headers.get('Content-Type')).toBe('application/json');
+        expect(headers.get('X-CSRF-Token')).toBe('csrf-token');
+        expect(headers.has('X-Redmine-API-Key')).toBe(false);
+        expect(result).toMatchObject({
+            status: 'ok',
+            completeness: 'complete',
+            baseline: null,
+            deletedSnapshotId: 'baseline-2',
+            deletedEntityIds: ['baseline-2']
+        });
+    });
+
+    it('aborts a hanging DELETE after the request timeout without retrying it', async () => {
+        vi.useFakeTimers();
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        }));
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const deletion = apiClient.deleteBaseline('baseline-2');
+        const rejection = expect(deletion).rejects.toMatchObject({ name: 'AbortError' });
+        await vi.advanceTimersByTimeAsync(14_999);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await rejection;
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('releases the DELETE timeout timer after a successful acknowledgement', async () => {
+        vi.useFakeTimers();
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'ok', completeness: 'complete', baseline: null, deleted_snapshot_id: 'baseline-2' })
+        }) as unknown as typeof fetch);
+
+        await apiClient.deleteBaseline('baseline-2');
+
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('releases the DELETE timeout timer after a network failure', async () => {
+        vi.useFakeTimers();
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('connection lost')) as unknown as typeof fetch);
+
+        await expect(apiClient.deleteBaseline('baseline-2')).rejects.toThrow();
+
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each([
+        { label: 'missing status', body: { completeness: 'complete', baseline: null, deleted_snapshot_id: 'baseline-2' } },
+        { label: 'partial completion', body: { status: 'ok', completeness: 'partial', baseline: null, deleted_snapshot_id: 'baseline-2' } },
+        { label: 'non-null baseline', body: { status: 'ok', completeness: 'complete', baseline: {}, deleted_snapshot_id: 'baseline-2' } },
+        { label: 'wrong deleted snapshot', body: { status: 'ok', completeness: 'complete', baseline: null, deleted_snapshot_id: 'other' } }
+    ])('rejects a $label response as an unknown protocol outcome', async ({ body }) => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await expect(apiClient.deleteBaseline('baseline-2')).rejects.toMatchObject({
+            name: 'ApiMutationError',
+            status: 'protocol_error',
+            httpStatus: 200
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves typed HTTP errors so callers can reconcile missing and conflicted snapshots', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            json: async () => ({ error: 'Baseline changed' })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await expect(apiClient.deleteBaseline('baseline-2')).rejects.toMatchObject({
+            name: 'ApiMutationError',
+            status: 'conflict',
+            httpStatus: 409,
+            message: 'Baseline changed'
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('apiClient.deleteTask', () => {
     afterEach(() => {
         vi.restoreAllMocks();

@@ -19,7 +19,7 @@ import {
     computeCenteredViewport,
     computeFocusedViewport
 } from './taskStore/viewport';
-import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersistence';
+import { buildMoveTaskResult, saveModifiedTasks, SupersededDataReadError } from './taskStore/taskPersistence';
 import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import { syncSharedQueryState, type SharedQuerySyncState } from './taskStore/querySync';
@@ -376,6 +376,7 @@ export interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<ReadApplyOutcome>;
+    invalidateFullDataReads: (options?: { refreshCurrentView?: boolean }) => void;
     getActiveReadContext: () => ReadContext | null;
     loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
@@ -1235,6 +1236,8 @@ const taskFieldsAffectLayout = (
 
 export const useTaskStore = create<TaskState>((set, get) => {
     const inflightReads = new Map<string, Promise<ReadApplyOutcome>>();
+    const mutationResyncDataGuards = new WeakMap<object, () => boolean>();
+    const canApplyMutationResyncData = (data: ApiData) => mutationResyncDataGuards.get(data)?.() ?? true;
     let auxiliaryReadContext: ReadContext | null = null;
     let auxiliaryReadGeneration = 0;
     let mutationResyncGeneration = 0;
@@ -1349,7 +1352,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
             if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
                 readLifecycleMetrics.staleResponsesRejected += 1;
-                throw new Error('Superseded mutation resync');
+                throw new SupersededDataReadError();
             }
             if (currentViewIdentity() === viewIdentityAtStart &&
                 lastAppliedViewIdentity === viewIdentityAtStart && get().initialDataLoaded) {
@@ -1357,6 +1360,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
             } else {
                 void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
             }
+            // `set` notifies subscribers synchronously. A subscriber can invalidate
+            // this read after the await guard above, before its caller applies data.
+            if (resyncGeneration !== mutationResyncGeneration) {
+                readLifecycleMetrics.staleResponsesRejected += 1;
+                throw new SupersededDataReadError();
+            }
+            mutationResyncDataGuards.set(data, () => (
+                resyncGeneration === mutationResyncGeneration
+            ));
             return data;
         } catch (error) {
             if (activeReadContext === context && get().dataReadStatus === 'loading') {
@@ -1618,6 +1630,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
     applyApiData: (data, readContext) => {
+        if (!canApplyMutationResyncData(data)) {
+            readLifecycleMetrics.staleResponsesRejected += 1;
+            return;
+        }
         const previousMode = get().memberProjectsOnly;
         const businessCalendar = configureBusinessCalendar(data.businessCalendar);
         let querySyncState: SharedQuerySyncState | null = null;
@@ -2676,6 +2692,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (canRetryFieldsDirectly && !confirmedRemote) {
                 try {
                     const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: beforeRetry.selectedStatusIds } });
+                    if (!canApplyMutationResyncData(resyncData)) return;
                     if (!retryIsCurrent() || get().dataReadStatus !== 'ready') return;
                     const entity = resyncData.tasks.find(task => task.id === id);
                     if (!entity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
@@ -2686,6 +2703,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     get().applyApiData(resyncData);
                     retryReadContext = get().activeReadContext;
                 } catch (error) {
+                    if (error instanceof SupersededDataReadError) return;
                     if (!retryIsCurrent() || get().dataReadStatus === 'loading') return;
                     const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
                     get().registerTaskConflict(id, conflictRecord.message || message, conflictRecord.generation,
@@ -2882,6 +2900,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!selectedRemote) {
             try {
                 const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
+                if (!canApplyMutationResyncData(resyncData)) return;
                 if (!ownsResolution(get()) ||
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus !== 'ready') return;
                 const remoteEntity = resyncData.tasks.find(task => task.id === id);
@@ -2893,6 +2912,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 expectedReadContext = get().activeReadContext;
                 selectedRemote = candidate;
             } catch (error) {
+                if (error instanceof SupersededDataReadError) return;
                 if (!ownsResolution(get()) ||
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus === 'loading') return;
                 const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
@@ -3390,6 +3410,41 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
         refreshData: async () => refreshCurrentData('refresh'),
+        invalidateFullDataReads: (options = {}) => {
+            const state = get();
+            const viewIdentityBeforeInvalidation = currentViewIdentity();
+            const currentViewIsApplied = state.initialDataLoaded && lastAppliedViewIdentity === viewIdentityBeforeInvalidation;
+            const invalidatedReadContext = activeReadContext;
+            const invalidatedReadPurpose = invalidatedReadContext?.purpose;
+            const pendingMemberProjectsOnly = (invalidatedReadContext?.scope as { memberProjectsOnly?: unknown } | undefined)?.memberProjectsOnly;
+            const pendingMemberScopeDiffers = typeof pendingMemberProjectsOnly === 'boolean' &&
+                pendingMemberProjectsOnly !== state.memberProjectsOnly;
+            invalidateDataRequests();
+            mutationResyncGeneration += 1;
+            activeReadContext = null;
+            const invalidationGeneration = dataRequestGeneration;
+            const refreshCurrentView = options.refreshCurrentView !== false && state.initialDataLoaded &&
+                (!currentViewIsApplied || pendingMemberScopeDiffers);
+            set((state) => ({
+                activeReadContext: null,
+                dataReadStatus: state.initialDataLoaded ? (currentViewIsApplied ? 'ready' : 'loading') : 'idle'
+            }));
+            if (refreshCurrentView) {
+                const purpose = invalidatedReadPurpose === 'saved_query' ? 'saved_query' : 'refresh';
+                queueMicrotask(() => {
+                    if (
+                        dataRequestGeneration !== invalidationGeneration ||
+                        activeReadContext !== null ||
+                        get().currentProjectId !== state.currentProjectId ||
+                        currentViewIdentity() !== viewIdentityBeforeInvalidation
+                    ) return;
+                    const memberProjectsOnly = pendingMemberScopeDiffers && typeof pendingMemberProjectsOnly === 'boolean'
+                        ? pendingMemberProjectsOnly
+                        : get().memberProjectsOnly;
+                    void refreshCurrentData(purpose, memberProjectsOnly).catch((error) => console.error('Failed to refresh invalidated current view', error));
+                });
+            }
+        },
         getActiveReadContext: () => activeReadContext,
 
     loadInitialData: async (params) => {

@@ -125,6 +125,51 @@ describe('Preferences storage', () => {
         expect(loadDisplayPreferencesWithSource(2).preferences.calculateCriticalPathEnabled).toBe(false);
     });
 
+    it('persists issue dialog sizing in project and shared Version 4 display preferences', () => {
+        saveDisplayPreferences({ issueDialogWidthPx: 900, issueDialogHeightMode: 'fixed', issueDialogHeightPercent: 65, issueDialogFullScreen: true }, 1);
+        expect(loadDisplayPreferencesWithSource(1).preferences).toMatchObject({
+            issueDialogWidthPx: 900,
+            issueDialogHeightMode: 'fixed',
+            issueDialogHeightPercent: 65,
+            issueDialogFullScreen: true
+        });
+        expect(loadDisplayPreferencesWithSource(2).preferences.issueDialogWidthPx).toBeUndefined();
+
+        saveGlobalDisplayPreferences({ issueDialogWidthPx: 1500, issueDialogHeightMode: 'fixed', issueDialogHeightPercent: 90, issueDialogFullScreen: false }, true);
+        expect(loadDisplayPreferencesWithSource(2).preferences).toMatchObject({
+            issueDialogWidthPx: 1500,
+            issueDialogHeightMode: 'fixed',
+            issueDialogHeightPercent: 90,
+            issueDialogFullScreen: false
+        });
+        expect(JSON.parse(window.localStorage.getItem('canvasGantt:preferences') || '{}').version).toBe(4);
+    });
+
+    it('normalizes invalid issue dialog sizing preferences to defaults', () => {
+        window.localStorage.setItem('canvasGantt:preferences', JSON.stringify({
+            version: 4,
+            general: {},
+            display: {
+                projects: {
+                    'project:1': {
+                        issueDialogWidthPx: 1000,
+                        issueDialogHeightMode: 'content',
+                        issueDialogHeightPercent: 72,
+                        issueDialogFullScreen: 'true'
+                    }
+                },
+                global: { enabled: false, preferences: {} }
+            }
+        }));
+
+        expect(loadDisplayPreferencesWithSource(1).preferences).toMatchObject({
+            issueDialogWidthPx: 1200,
+            issueDialogHeightMode: 'auto',
+            issueDialogHeightPercent: 80
+        });
+        expect(loadDisplayPreferencesWithSource(1).preferences.issueDialogFullScreen).toBeUndefined();
+    });
+
     it('drops invalid stored critical path preference values', () => {
         window.localStorage.setItem('canvasGantt:preferences', JSON.stringify({
             version: 4,

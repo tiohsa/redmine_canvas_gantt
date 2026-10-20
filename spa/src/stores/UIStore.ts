@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DatePlacementMode as DatePlacementModeValue, type DefaultRelationType, normalizeDatePlacementMode } from '../types/constraints';
-import { loadDisplayPreferencesWithSource, loadPreferences, type DisplayPreferencesSource, type StoredDisplayPreferences } from '../utils/preferences';
+import {
+    DEFAULT_ISSUE_DIALOG_HEIGHT_MODE,
+    DEFAULT_ISSUE_DIALOG_HEIGHT_PERCENT,
+    DEFAULT_ISSUE_DIALOG_FULL_SCREEN,
+    DEFAULT_ISSUE_DIALOG_WIDTH_PX,
+    loadDisplayPreferencesWithSource,
+    loadPreferences,
+    type DisplayPreferencesSource,
+    type IssueDialogHeightMode,
+    type IssueDialogWidthPx,
+    type StoredDisplayPreferences
+} from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import {
     buildColumnSettingsFromVisibleKeys,
@@ -39,6 +50,10 @@ export interface IssueDialogContext {
 }
 
 interface UIState {
+    issueDialogWidthPx: IssueDialogWidthPx;
+    issueDialogHeightMode: IssueDialogHeightMode;
+    issueDialogHeightPercent: number;
+    issueDialogFullScreen: boolean;
     notifications: Notification[];
     showProgressLine: boolean;
     showTaskTitles: boolean;
@@ -111,6 +126,11 @@ interface UIState {
     setAutoScheduleMoveMode: (value: AutoScheduleMoveModeValue) => void;
     setDatePlacementMode: (value: DatePlacementModeValue) => void;
     setSidebarFontSize: (size: number) => void;
+    setIssueDialogWidthPx: (width: IssueDialogWidthPx) => void;
+    setIssueDialogHeightMode: (mode: IssueDialogHeightMode) => void;
+    setIssueDialogHeightPercent: (percent: number) => void;
+    setIssueDialogFullScreen: (value: boolean) => void;
+    resetIssueDialogSize: () => void;
     setDisplayPreferencesGlobalEnabled: (enabled: boolean) => void;
     resetRelationPreferences: () => void;
 }
@@ -173,6 +193,10 @@ const redmineColumnState = (settings: ColumnConfig[]): string => settings
     .join('|');
 
 export const useUIStore = create<UIState>((set, get) => ({
+    issueDialogWidthPx: displayPreferences.issueDialogWidthPx ?? DEFAULT_ISSUE_DIALOG_WIDTH_PX,
+    issueDialogHeightMode: displayPreferences.issueDialogHeightMode ?? DEFAULT_ISSUE_DIALOG_HEIGHT_MODE,
+    issueDialogHeightPercent: displayPreferences.issueDialogHeightPercent ?? DEFAULT_ISSUE_DIALOG_HEIGHT_PERCENT,
+    issueDialogFullScreen: displayPreferences.issueDialogFullScreen ?? DEFAULT_ISSUE_DIALOG_FULL_SCREEN,
     notifications: [],
     showProgressLine: displayPreferences.showProgressLine ?? false,
     showTaskTitles: displayPreferences.showTaskTitles ?? true,
@@ -373,6 +397,23 @@ export const useUIStore = create<UIState>((set, get) => ({
     setAutoScheduleMoveMode: (value) => set(() => ({ autoScheduleMoveMode: value })),
     setDatePlacementMode: (value) => set(() => ({ datePlacementMode: normalizeDatePlacementMode(value) })),
     setSidebarFontSize: (size) => set(() => ({ sidebarFontSize: size })),
+    setIssueDialogWidthPx: (width) => set((state) => state.issueDialogWidthPx === width ? state : { issueDialogWidthPx: width }),
+    setIssueDialogHeightMode: (mode) => set((state) => state.issueDialogHeightMode === mode ? state : { issueDialogHeightMode: mode }),
+    setIssueDialogHeightPercent: (percent) => set((state) => state.issueDialogHeightPercent === percent ? state : { issueDialogHeightPercent: percent }),
+    setIssueDialogFullScreen: (value) => set((state) => state.issueDialogFullScreen === value ? state : { issueDialogFullScreen: value }),
+    resetIssueDialogSize: () => set((state) => (
+        state.issueDialogWidthPx === DEFAULT_ISSUE_DIALOG_WIDTH_PX
+            && state.issueDialogHeightMode === DEFAULT_ISSUE_DIALOG_HEIGHT_MODE
+            && state.issueDialogHeightPercent === DEFAULT_ISSUE_DIALOG_HEIGHT_PERCENT
+            && state.issueDialogFullScreen === DEFAULT_ISSUE_DIALOG_FULL_SCREEN
+            ? state
+            : {
+                issueDialogWidthPx: DEFAULT_ISSUE_DIALOG_WIDTH_PX,
+                issueDialogHeightMode: DEFAULT_ISSUE_DIALOG_HEIGHT_MODE,
+                issueDialogHeightPercent: DEFAULT_ISSUE_DIALOG_HEIGHT_PERCENT,
+                issueDialogFullScreen: DEFAULT_ISSUE_DIALOG_FULL_SCREEN
+            }
+    )),
     setDisplayPreferencesGlobalEnabled: (enabled) => set(() => ({ displayPreferencesGlobalEnabled: enabled })),
     resetRelationPreferences: () => set(() => ({
         defaultRelationType: DEFAULT_RELATION_TYPE,

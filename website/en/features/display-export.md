@@ -20,6 +20,16 @@ Display settings. [View full-size image](/images/display-settings-en.png)
 
 To show or hide the **Progress Line**, select it in the toolbar. This line starts at today's position and connects one point per issue row: the point is placed on the task bar according to its progress percentage. Closed issues and future issues that have not started are placed at today's position. This is separate from the vertical today line.
 
+### Issue dialog size (development feature)
+
+In the development version, horizontal lines separate each settings group in the display settings panel.
+
+The development version also adjusts the panel position to keep it within the viewport when the toolbar wraps or the browser is resized. Scroll inside the panel to reach settings further down.
+
+Issue dialog size controls and the wider settings panel layout are development changes and are not included in release v0.18.0. In the development version, the settings panel uses a wider layout and adjusts its width on narrow screens. It provides Compact (900 px), Standard (1200 px, the default), and Wide (1500 px) widths, plus automatic or fixed height. Fixed height is 50% to 90% of the viewport in 5% steps and defaults to 80%. **Fill viewport** makes issue dialogs cover the current browser viewport. The width and height choices stay saved but are disabled while this option is on. Time-entry and query dialogs keep their normal sizing. Changes take effect immediately. Reset returns the width to 1200 px and height to automatic, turns off Fill viewport, and returns the fixed-height percentage to 80%.
+
+These preferences follow the existing display preference scope: per project, or shared across projects in the same browser profile when that option is enabled. The selected width is capped to fit the viewport. The settings apply to issue display, edit, and creation dialogs, subtasks, and issue comment editing. In the development version, time-entry and query dialogs also shrink to fit narrow screens. Issue width, fixed-height, and Fill viewport preferences do not apply to them; time-entry dialogs retain their compact height.
+
 ## PNG and CSV
 
 1. Show the timeline in the right pane. Export is unavailable while that pane is hidden.

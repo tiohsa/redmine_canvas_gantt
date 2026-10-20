@@ -2,7 +2,7 @@ import React from 'react';
 
 import type { TaskStatus, ZoomLevel } from '../types';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
-import type { BaselineSaveScope } from '../types/baseline';
+import type { BaselineSaveScope, BaselineSnapshot } from '../types/baseline';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
@@ -19,6 +19,8 @@ import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
 import { DisplaySettingsControls } from './DisplaySettingsControls';
 import { BaselineControls } from './BaselineControls';
+import { BaselineDeleteConfirmation } from './BaselineDeleteConfirmation';
+import { classifyMutationError } from '../api/mutationOutcome';
 import {
     applyIndeterminateState,
     isCheckboxChecked,
@@ -83,6 +85,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
+    const [pendingDeleteSnapshot, setPendingDeleteSnapshot] = React.useState<BaselineSnapshot | null>(null);
+    const baselineDeleteOperationRef = React.useRef(0);
+    const baselineDeleteContextRef = React.useRef<{ token: number; projectId: string; isCurrent: () => boolean } | null>(null);
+    const currentProjectId = useTaskStore(state => state.currentProjectId);
+    const configuredProjectId = window.RedmineCanvasGantt?.projectId?.toString() ?? '';
+    const configuredApiBase = window.RedmineCanvasGantt?.apiBase;
+    const configuredRedmineBase = window.RedmineCanvasGantt?.redmineBase;
+    const configuredAuthToken = window.RedmineCanvasGantt?.authToken;
     const [manualSaveInProgress, setManualSaveInProgress] = React.useState(false);
     const [pngExportInProgress, setPngExportInProgress] = React.useState(false);
     const pngExportInProgressRef = React.useRef(false);
@@ -119,6 +129,28 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         todayOnwardOnly,
         setTodayOnwardOnly
     } = useWorkloadStore();
+
+    React.useEffect(() => {
+        const activeDelete = baselineDeleteContextRef.current;
+        if (activeDelete && !activeDelete.isCurrent()) {
+            baselineDeleteContextRef.current = null;
+            baselineDeleteOperationRef.current += 1;
+            const latest = useBaselineStore.getState();
+            if (latest.saveStatus === 'deleting') {
+                const activeProject = String(useTaskStore.getState().currentProjectId ?? '');
+                const status = !latest.snapshot
+                    ? 'idle'
+                    : latest.snapshot.projectId === activeProject ? 'ready' : 'idle';
+                latest.setSaveStatus(status);
+            }
+            setPendingDeleteSnapshot(null);
+        } else if (
+            pendingDeleteSnapshot &&
+            (pendingDeleteSnapshot.projectId !== String(currentProjectId ?? '') || pendingDeleteSnapshot.projectId !== configuredProjectId)
+        ) {
+            setPendingDeleteSnapshot(null);
+        }
+    }, [currentProjectId, queryContext, configuredProjectId, configuredApiBase, configuredRedmineBase, configuredAuthToken, pendingDeleteSnapshot]);
 
     const [draftRelationType, setDraftRelationType] = React.useState<DefaultRelationType>(defaultRelationType);
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
@@ -236,13 +268,14 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     };
 
     const handleSaveBaseline = async (scope: BaselineSaveScope) => {
-        if (!permissions.baselineEditable || baselineSaveStatus === 'saving') {
+        const currentStatus = useBaselineStore.getState().saveStatus;
+        if (!permissions.baselineEditable || currentStatus === 'saving' || currentStatus === 'deleting') {
             return;
         }
 
         const baselineStore = useBaselineStore.getState();
-        baselineStore.setSaveStatus('saving');
         baselineStore.setLastError(null);
+        baselineStore.setSaveStatus('saving');
 
         try {
             if (modifiedTaskIds.size > 0) {
@@ -278,6 +311,191 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             const message = error instanceof Error ? error.message : (i18n.t('label_baseline_save_failed') || 'Failed to save baseline');
             baselineStore.setLastError(message);
             useUIStore.getState().addNotification(message, 'error');
+        }
+    };
+
+    const handleDeleteBaseline = () => {
+        const taskState = useTaskStore.getState();
+        const baselineState = useBaselineStore.getState();
+        const projectId = window.RedmineCanvasGantt?.projectId?.toString();
+        if (
+            !taskState.permissions.baselineEditable ||
+            taskState.currentProjectId !== projectId ||
+            !baselineState.hasBaseline ||
+            !baselineState.snapshot ||
+            baselineState.snapshot.projectId !== projectId ||
+            baselineState.saveStatus === 'saving' ||
+            baselineState.saveStatus === 'deleting'
+        ) return;
+
+        setPendingDeleteSnapshot({
+            ...baselineState.snapshot,
+            tasksByIssueId: { ...baselineState.snapshot.tasksByIssueId }
+        });
+        closeMenu('baselineSave');
+    };
+
+    const handleConfirmBaselineDelete = async (snapshotId: string) => {
+        const pendingSnapshot = pendingDeleteSnapshot;
+        const taskStateAtStart = useTaskStore.getState();
+        const configAtStart = window.RedmineCanvasGantt;
+        const projectIdAtStart = String(configAtStart?.projectId ?? '');
+        const apiBaseAtStart = configAtStart?.apiBase;
+        const redmineBaseAtStart = configAtStart?.redmineBase;
+        const authTokenAtStart = configAtStart?.authToken;
+        const currentBaseline = useBaselineStore.getState();
+
+        if (
+            !pendingSnapshot ||
+            snapshotId !== pendingSnapshot.snapshotId ||
+            pendingSnapshot.projectId !== projectIdAtStart ||
+            taskStateAtStart.currentProjectId !== projectIdAtStart ||
+            currentBaseline.snapshot?.projectId !== projectIdAtStart ||
+            currentBaseline.snapshot?.snapshotId !== snapshotId ||
+            !currentBaseline.hasBaseline ||
+            !taskStateAtStart.permissions.baselineEditable ||
+            currentBaseline.saveStatus === 'saving' ||
+            currentBaseline.saveStatus === 'deleting'
+        ) {
+            setPendingDeleteSnapshot(null);
+            if (currentBaseline.snapshot?.snapshotId !== snapshotId) {
+                useUIStore.getState().addNotification(
+                    i18n.t('label_baseline_updated_elsewhere') || 'The baseline was updated by another user.',
+                    'warning'
+                );
+            }
+            return;
+        }
+
+        // A baseline belongs to the project and authenticated Redmine context, not
+        // to the current filter/query view. A view change must not abandon a
+        // successful project-wide delete.
+        const isCurrentOwner = () => {
+            const currentConfig = window.RedmineCanvasGantt;
+            const currentTaskState = useTaskStore.getState();
+            return currentTaskState.currentProjectId === projectIdAtStart &&
+                String(currentConfig?.projectId ?? '') === projectIdAtStart &&
+                currentConfig?.apiBase === apiBaseAtStart &&
+                currentConfig?.redmineBase === redmineBaseAtStart &&
+                currentConfig?.authToken === authTokenAtStart;
+        };
+        const operationToken = ++baselineDeleteOperationRef.current;
+        baselineDeleteContextRef.current = { token: operationToken, projectId: projectIdAtStart, isCurrent: isCurrentOwner };
+        const baselineStore = useBaselineStore.getState();
+        baselineStore.setLastError(null);
+        baselineStore.setSaveStatus('deleting');
+
+        const reconcile = async (): Promise<boolean> => {
+            if (!isCurrentOwner()) return false;
+            useTaskStore.getState().invalidateFullDataReads({ refreshCurrentView: false });
+            if (!isCurrentOwner()) return false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const refresh = useTaskStore.getState().refreshData()
+                    .then(outcome => ({ kind: 'settled' as const, applied: outcome.status === 'applied' }))
+                    .catch(() => ({ kind: 'settled' as const, applied: false }));
+                const refreshContext = useTaskStore.getState().getActiveReadContext();
+                const outcome = await Promise.race([
+                    refresh,
+                    new Promise<{ kind: 'timeout' }>(resolve => {
+                        timeout = setTimeout(() => resolve({ kind: 'timeout' }), 10_000);
+                    })
+                ]);
+                if (outcome.kind === 'timeout') {
+                    const taskStore = useTaskStore.getState();
+                    if (isCurrentOwner() && refreshContext && taskStore.getActiveReadContext() === refreshContext) {
+                        taskStore.invalidateFullDataReads({ refreshCurrentView: false });
+                    }
+                    return false;
+                }
+                return outcome.applied;
+            } catch {
+                return false;
+            } finally {
+                if (timeout !== undefined) clearTimeout(timeout);
+            }
+        };
+
+        try {
+            await taskMutationService.deleteBaseline(snapshotId, () => {
+                if (!isCurrentOwner() || !useTaskStore.getState().permissions.baselineEditable) {
+                    if (!isCurrentOwner()) throw new Error('The current project or authenticated context changed before the baseline could be deleted.');
+                    throw Object.assign(new Error('Baseline permission is no longer available.'), {
+                        status: 'forbidden',
+                        httpStatus: 403
+                    });
+                }
+            });
+            if (!isCurrentOwner()) return;
+            useTaskStore.getState().invalidateFullDataReads();
+            if (!isCurrentOwner()) return;
+
+            const latestBaseline = useBaselineStore.getState();
+            if (latestBaseline.snapshot?.snapshotId === snapshotId) {
+                latestBaseline.setSnapshot(null);
+                useUIStore.getState().setShowBaseline(false);
+                latestBaseline.setSaveStatus('idle');
+            } else if (!latestBaseline.snapshot) {
+                useUIStore.getState().setShowBaseline(false);
+                latestBaseline.setSaveStatus('idle');
+            } else {
+                latestBaseline.setSaveStatus('ready');
+            }
+            useUIStore.getState().addNotification(i18n.t('label_baseline_deleted') || 'Baseline deleted', 'success');
+        } catch (error) {
+            if (!isCurrentOwner()) return;
+
+            const outcome = classifyMutationError(error);
+            const errorRecord = error && typeof error === 'object' ? error as { httpStatus?: unknown } : null;
+            const isConflictOrMissing = outcome.status === 'conflict' || outcome.status === 'not_found';
+            const isUnknown = outcome.status === 'protocol_error' || typeof errorRecord?.httpStatus !== 'number' ||
+                (errorRecord.httpStatus >= 500 && errorRecord.httpStatus <= 599);
+
+            if (isConflictOrMissing || isUnknown) {
+                const refreshed = await reconcile();
+                if (!isCurrentOwner()) return;
+                if (refreshed) {
+                    const currentAfterRefresh = useBaselineStore.getState();
+                    currentAfterRefresh.setSaveStatus(currentAfterRefresh.hasBaseline ? 'ready' : 'idle');
+                    if (!currentAfterRefresh.hasBaseline) useUIStore.getState().setShowBaseline(false);
+
+                    if (isConflictOrMissing && (outcome.status === 'conflict' || currentAfterRefresh.hasBaseline)) {
+                        useUIStore.getState().addNotification(
+                            i18n.t('label_baseline_updated_elsewhere') || 'The baseline was updated by another user.',
+                            'warning'
+                        );
+                    } else if (!currentAfterRefresh.hasBaseline) {
+                        useUIStore.getState().addNotification(i18n.t('label_baseline_deleted') || 'Baseline deleted', 'success');
+                    } else {
+                        useUIStore.getState().addNotification(
+                            i18n.t('label_baseline_delete_unknown') || 'Could not confirm whether the baseline was deleted.',
+                            'error'
+                        );
+                    }
+                } else {
+                    const message = i18n.t('label_baseline_delete_unknown') || 'Could not confirm whether the baseline was deleted.';
+                    useBaselineStore.getState().setLastError(message);
+                    useUIStore.getState().addNotification(message, 'error');
+                }
+            } else {
+                const message = error instanceof Error
+                    ? error.message
+                    : (i18n.t('label_baseline_delete_failed') || 'Failed to delete baseline.');
+                useBaselineStore.getState().setLastError(message);
+                useUIStore.getState().addNotification(message, 'error');
+            }
+        } finally {
+            if (baselineDeleteOperationRef.current === operationToken) {
+                baselineDeleteContextRef.current = null;
+                const latest = useBaselineStore.getState();
+                if (latest.saveStatus === 'deleting') {
+                    const latestProjectId = String(useTaskStore.getState().currentProjectId ?? '');
+                    if (isCurrentOwner() || latestProjectId === projectIdAtStart) {
+                        latest.setSaveStatus(latest.snapshot?.projectId === latestProjectId ? 'ready' : 'idle');
+                    }
+                }
+                setPendingDeleteSnapshot(null);
+            }
         }
     };
 
@@ -2004,8 +2222,16 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     showBaselineSaveMenu={showBaselineSaveMenu}
                     onToggleSaveMenu={() => toggleMenu('baselineSave')}
                     onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
+                    onDeleteBaseline={handleDeleteBaseline}
                     onToggleBaseline={() => toggleBaseline()}
                 />
+                {pendingDeleteSnapshot && (
+                    <BaselineDeleteConfirmation
+                        snapshot={pendingDeleteSnapshot}
+                        onCancel={() => setPendingDeleteSnapshot(null)}
+                        onConfirm={handleConfirmBaselineDelete}
+                    />
+                )}
                 <ActionNeededControl />
 
                 {hasPendingManualChanges && (

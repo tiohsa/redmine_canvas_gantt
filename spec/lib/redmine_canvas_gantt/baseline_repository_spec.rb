@@ -1,4 +1,5 @@
 require_relative '../../spec_helper'
+require 'timeout'
 require_relative '../../../lib/redmine_canvas_gantt/baseline_task_state'
 require_relative '../../../lib/redmine_canvas_gantt/baseline_snapshot'
 require_relative '../../../lib/redmine_canvas_gantt/baseline_repository'
@@ -176,6 +177,132 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
         expect(stored.fetch('baseline_snapshots').fetch('1').fetch('snapshot_id'))
           .to be_in(%w[baseline-a baseline-b])
       end
+
+      it 'preserves a concurrent replacement when a delete races on independent database connections' do
+        initial_repository = described_class.new(settings_reader: Setting)
+        initial_repository.replace(project_id: 1, snapshot: concurrent_snapshot(1, 'baseline-old'))
+
+        ready = Queue.new
+        start = Queue.new
+        connections = Queue.new
+        results = Queue.new
+        operations = []
+        begin
+          Setting.transaction do
+            Setting.lock.find_by!(name: described_class::SETTING_NAME)
+            operations = [
+              Thread.new do
+                Setting.connection_pool.with_connection do
+                  connections << Setting.connection.object_id
+                  repository = described_class.new(settings_reader: Setting)
+                  ready << true
+                  start.pop
+                  begin
+                    results << repository.delete(project_id: 1, expected_snapshot_id: 'baseline-old')
+                  rescue described_class::SnapshotConflict, described_class::SnapshotNotFound
+                    results << :stale_delete_rejected
+                  end
+                end
+              end,
+              Thread.new do
+                Setting.connection_pool.with_connection do
+                  connections << Setting.connection.object_id
+                  repository = described_class.new(settings_reader: Setting)
+                  ready << true
+                  start.pop
+                  repository.replace(project_id: 1, snapshot: concurrent_snapshot(1, 'baseline-new'))
+                  results << :saved
+                end
+              end
+            ]
+
+            2.times { Timeout.timeout(5) { ready.pop } }
+            expect(2.times.map { connections.pop }.uniq.length).to eq(2)
+            2.times { start << true }
+            sleep 0.1
+            expect(results).to be_empty
+          end
+        ensure
+          2.times { start << true } if operations.any?
+          operations.each { |thread| thread.join(5) }
+          operations.each { |thread| thread.kill if thread.alive? }
+          operations.each { |thread| thread.join(5) }
+          Setting.connection_pool.release_connection
+        end
+        operations.each do |thread|
+          expect(thread).not_to be_alive, 'database race worker did not stop after lock release'
+          thread.value
+        end
+        operation_results = 2.times.map { Timeout.timeout(5) { results.pop } }
+
+        Setting.clear_cache
+        stored = Setting.find_by!(name: described_class::SETTING_NAME).value
+        expect(operation_results).to include(:saved)
+        expect(stored.fetch('baseline_snapshots').fetch('1').fetch('snapshot_id')).to eq('baseline-new')
+      end
+    end
+  end
+
+  describe '#delete' do
+    before do
+      settings_hash['baseline_snapshots'] = {
+        '1' => { 'snapshot_id' => 'baseline-1' },
+        '2' => { 'snapshot_id' => 'baseline-2' }
+      }
+    end
+
+    it 'deletes only the matching project snapshot and preserves other settings' do
+      deleted_snapshot_id = repository.delete(project_id: 1, expected_snapshot_id: 'baseline-1')
+
+      expect(deleted_snapshot_id).to eq('baseline-1')
+      persisted = captured_settings.last
+      expect(persisted['row_height']).to eq('36')
+      expect(persisted['baseline_snapshots']).to eq('2' => { 'snapshot_id' => 'baseline-2' })
+    end
+
+    it 'rejects a stale snapshot id without changing the stored baseline' do
+      expect do
+        repository.delete(project_id: 1, expected_snapshot_id: 'baseline-stale')
+      end.to raise_error(described_class::SnapshotConflict)
+
+      expect(captured_settings).to be_empty
+      expect(settings_reader.plugin_redmine_canvas_gantt['baseline_snapshots']['1']['snapshot_id'])
+        .to eq('baseline-1')
+    end
+
+    it 'reports a missing baseline' do
+      expect do
+        repository.delete(project_id: 3, expected_snapshot_id: 'baseline-3')
+      end.to raise_error(described_class::SnapshotNotFound)
+    end
+
+    it 'does not let a concurrent stale deletion remove a newer replacement' do
+      replacement = RedmineCanvasGantt::BaselineSnapshot.new(
+        snapshot_id: 'baseline-new', project_id: 1, captured_at: Time.utc(2026, 4, 2),
+        captured_by_id: 7, captured_by_name: 'Alice', scope: 'project', task_states: []
+      )
+      operations = Queue.new
+      start = Queue.new
+      threads = [
+        Thread.new do
+          operations << :delete
+          start.pop
+          repository.delete(project_id: 1, expected_snapshot_id: 'baseline-1')
+        rescue described_class::SnapshotConflict, described_class::SnapshotNotFound
+          :stale_delete_rejected
+        end,
+        Thread.new do
+          operations << :replace
+          start.pop
+          repository.replace(project_id: 1, snapshot: replacement)
+        end
+      ]
+      2.times { operations.pop }
+      2.times { start << true }
+      threads.each(&:value)
+
+      expect(settings_reader.plugin_redmine_canvas_gantt.dig('baseline_snapshots', '1', 'snapshot_id'))
+        .to eq('baseline-new')
     end
   end
 

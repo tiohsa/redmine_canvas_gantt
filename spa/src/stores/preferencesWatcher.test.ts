@@ -57,6 +57,34 @@ describe('preferencesWatcher', () => {
         expect(syncSharedQueryState).not.toHaveBeenCalled();
     });
 
+    it('persists issue dialog sizing through project and shared display preferences', () => {
+        useUIStore.getState().setIssueDialogWidthPx(900);
+        useUIStore.getState().setIssueDialogFullScreen(true);
+
+        expect(preferences.saveDisplayPreferences).toHaveBeenCalledWith(
+            expect.objectContaining({ issueDialogWidthPx: 900, issueDialogFullScreen: true })
+        );
+        expect(preferences.savePreferences).not.toHaveBeenCalled();
+
+        vi.clearAllMocks();
+        useUIStore.setState({ displayPreferencesGlobalEnabled: true });
+        vi.clearAllMocks();
+        useUIStore.getState().setIssueDialogHeightMode('fixed');
+        useUIStore.getState().setIssueDialogHeightPercent(65);
+
+        expect(preferences.saveGlobalDisplayPreferences).toHaveBeenCalledWith(
+            expect.objectContaining({
+                issueDialogWidthPx: 900,
+                issueDialogHeightMode: 'fixed',
+                issueDialogHeightPercent: 65,
+                issueDialogFullScreen: true
+            })
+        );
+        expect(preferences.saveDisplayPreferences).not.toHaveBeenCalled();
+        expect(preferences.savePreferences).not.toHaveBeenCalled();
+        expect(syncSharedQueryState).not.toHaveBeenCalled();
+    });
+
     it('persists a row-height change only as Display Preferences', () => {
         useTaskStore.getState().setRowHeight(44);
 

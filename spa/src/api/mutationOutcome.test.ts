@@ -214,6 +214,15 @@ describe('mutation outcome classification', () => {
         });
     });
 
+    it('treats a validated baseline delete with a null snapshot as successful', () => {
+        expect(classifyMutationResult({
+            status: 'ok',
+            baseline: null,
+            deletedSnapshotId: 'snapshot-1',
+            completeness: 'complete'
+        })).toMatchObject({ kind: 'success', status: 'ok' });
+    });
+
     it.each([
         undefined,
         null,

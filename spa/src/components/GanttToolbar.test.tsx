@@ -16,6 +16,9 @@ import { setVisibleColumnsForTest } from '../test/columnTestHelpers';
 import type { CustomFieldMeta } from '../types/editMeta';
 import type { Task } from '../types';
 import { createReadContext } from '../stores/taskStore/stateContract';
+import { getMutationOperationRecords, getPendingMutationQueueSize } from '../stores/taskStore/taskPersistence';
+import { taskMutationService } from '../services/taskMutationService';
+import type { BaselineSnapshot } from '../types/baseline';
 
 vi.mock('../utils/navigation', () => ({
     navigateToRedminePath: vi.fn()
@@ -24,6 +27,7 @@ vi.mock('../utils/navigation', () => ({
 vi.mock('../api/client', () => ({
     apiClient: {
         saveBaseline: vi.fn(),
+        deleteBaseline: vi.fn(),
         fetchData: vi.fn(),
         fetchQueries: vi.fn()
     }
@@ -34,6 +38,15 @@ const getCanvasGanttConfig = (): NonNullable<Window['RedmineCanvasGantt']> => {
     if (!config) throw new Error('RedmineCanvasGantt config is not initialized');
     return config;
 };
+
+const baselineSnapshot = (snapshotId: string): BaselineSnapshot => ({
+    snapshotId,
+    projectId: '1',
+    capturedAt: '2026-10-17T00:00:00.000Z',
+    capturedByName: 'Ada',
+    scope: 'filtered',
+    tasksByIssueId: {}
+});
 
 describe('GanttToolbar shortcuts', () => {
     const exportRef: React.RefObject<GanttExportHandle | null> = {
@@ -473,6 +486,270 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
         fireEvent.click(screen.getByRole('checkbox', { name: 'Show baseline comparison' }));
+        expect(useUIStore.getState().showBaseline).toBe(true);
+    });
+
+    it('confirms and deletes only the frozen baseline snapshot', async () => {
+        const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline);
+        deleteBaselineMock.mockResolvedValue({
+            status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1', completeness: 'complete'
+        });
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        useUIStore.getState().setShowBaseline(true);
+        const invalidation = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(await screen.findByTestId('baseline-delete-button'));
+
+        const dialog = screen.getByRole('alertdialog', { name: 'Delete baseline' });
+        expect(dialog).toHaveTextContent('Ada');
+        expect(dialog).toHaveTextContent('Filtered view');
+        fireEvent.click(within(dialog).getByTestId('baseline-delete-confirm-button'));
+
+        await waitFor(() => expect(deleteBaselineMock).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(useBaselineStore.getState().snapshot).toBeNull());
+        expect(deleteBaselineMock).toHaveBeenCalledWith('baseline-1', '');
+        expect(invalidation).toHaveBeenCalledWith();
+        expect(useBaselineStore.getState().saveStatus).toBe('idle');
+        expect(useUIStore.getState().showBaseline).toBe(false);
+    });
+
+    it('keeps the snapshot and releases the dialog when reconciliation times out', async () => {
+        vi.useFakeTimers();
+        const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline).mockRejectedValue(new Error('network unavailable'));
+        let resolveLateRead!: (data: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        vi.mocked(apiClient.fetchData).mockImplementationOnce(() => new Promise(resolve => { resolveLateRead = resolve; }));
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        const invalidation = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+
+        try {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+            expect(deleteBaselineMock).toHaveBeenCalledTimes(1);
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+            expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+            expect(useBaselineStore.getState()).toMatchObject({
+                snapshot: baselineSnapshot('baseline-1'),
+                hasBaseline: true,
+                saveStatus: 'error',
+                lastError: expect.any(String)
+            });
+            expect(invalidation).toHaveBeenCalledWith({ refreshCurrentView: false });
+            expect(invalidation).toHaveBeenCalledTimes(2);
+
+            await act(async () => {
+                resolveLateRead({
+                    tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] },
+                    statuses: [], customFields: [], project: { id: '1', name: 'Project' },
+                    permissions: { editable: true, viewable: true, baselineEditable: true }, baseline: null,
+                    warnings: []
+                });
+                await Promise.resolve();
+            });
+            expect(useTaskStore.getState().getActiveReadContext()).toBeNull();
+            expect(useBaselineStore.getState()).toMatchObject({
+                snapshot: baselineSnapshot('baseline-1'),
+                hasBaseline: true
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not invalidate a newer read context when the older reconciliation times out', async () => {
+        vi.useFakeTimers();
+        vi.mocked(apiClient.deleteBaseline).mockRejectedValue(new Error('network unavailable'));
+        let resolveOldRead!: (data: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        let resolveNewRead!: (data: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        vi.mocked(apiClient.fetchData)
+            .mockImplementationOnce(() => new Promise(resolve => { resolveOldRead = resolve; }))
+            .mockImplementationOnce(() => new Promise(resolve => { resolveNewRead = resolve; }));
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        const invalidate = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+        const fetchedData = {
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] },
+            statuses: [], customFields: [], project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            baseline: baselineSnapshot('baseline-1'), warnings: []
+        } satisfies Awaited<ReturnType<typeof apiClient.fetchData>>;
+
+        try {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-button'));
+            fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+            await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+            let newerRead!: ReturnType<ReturnType<typeof useTaskStore.getState>['refreshData']>;
+            act(() => { newerRead = useTaskStore.getState().refreshData(); });
+            const newerContext = useTaskStore.getState().getActiveReadContext();
+            expect(newerContext).not.toBeNull();
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(2);
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+            expect(useTaskStore.getState().getActiveReadContext()).toBe(newerContext);
+            expect(invalidate).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                resolveOldRead(fetchedData);
+                await Promise.resolve();
+            });
+            expect(useTaskStore.getState().getActiveReadContext()).toBe(newerContext);
+            expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+
+            await act(async () => {
+                resolveNewRead(fetchedData);
+                await newerRead;
+            });
+            expect((await newerRead).status).toBe('applied');
+            expect(useTaskStore.getState().getActiveReadContext()).toBe(newerContext);
+            expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+            expect(useBaselineStore.getState()).toMatchObject({
+                snapshot: baselineSnapshot('baseline-1'),
+                hasBaseline: true
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('preserves a newer baseline and its warnings when the confirmed snapshot is deleted', async () => {
+        let finishDelete!: () => void;
+        const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline).mockImplementation(async () => {
+            await new Promise<void>(resolve => { finishDelete = resolve; });
+            return { status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1', completeness: 'complete' };
+        });
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        useUIStore.getState().setShowBaseline(true);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(await screen.findByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+        await waitFor(() => expect(deleteBaselineMock).toHaveBeenCalledTimes(1));
+
+        const newerBaseline = baselineSnapshot('baseline-2');
+        act(() => useBaselineStore.getState().setSnapshot(newerBaseline, ['new snapshot warning']));
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] },
+            statuses: [], customFields: [], project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }, baseline: newerBaseline,
+            warnings: ['new snapshot warning']
+        });
+        await act(async () => finishDelete());
+
+        expect(useBaselineStore.getState()).toMatchObject({
+            snapshot: baselineSnapshot('baseline-2'),
+            hasBaseline: true,
+            saveStatus: 'ready',
+            warnings: ['new snapshot warning']
+        });
+        expect(useUIStore.getState().showBaseline).toBe(true);
+    });
+
+    it('does not dispatch a queued deletion after project context changes', async () => {
+        let finishSave!: () => void;
+        vi.mocked(apiClient.saveBaseline).mockImplementation(async () => {
+            await new Promise<void>(resolve => { finishSave = resolve; });
+            return { status: 'ok', baseline: null };
+        });
+        const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline).mockResolvedValue({
+            status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1', completeness: 'complete'
+        });
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        const invalidation = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+
+        const queuedSave = taskMutationService.saveBaseline({ scope: 'project' });
+        await waitFor(() => expect(apiClient.saveBaseline).toHaveBeenCalledTimes(1));
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(await screen.findByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+
+        act(() => {
+            window.RedmineCanvasGantt = { ...getCanvasGanttConfig(), projectId: 2, apiBase: '/projects/2/canvas_gantt' };
+            useTaskStore.setState({ currentProjectId: '2' });
+        });
+        finishSave();
+        await queuedSave;
+        await waitFor(() => expect(getPendingMutationQueueSize()).toBe(0));
+        await waitFor(() => expect(getMutationOperationRecords()
+            .filter(candidate => candidate.entityIds.includes('baseline:1:delete'))
+            .at(-1)?.status).toBe('failed'));
+        expect(deleteBaselineMock).not.toHaveBeenCalled();
+        expect(invalidation).not.toHaveBeenCalled();
+    });
+
+    it('ignores a late delete success after switching to another project', async () => {
+        let finishDelete!: () => void;
+        const deleteBaselineMock = vi.mocked(apiClient.deleteBaseline).mockImplementation(async () => {
+            await new Promise<void>(resolve => { finishDelete = resolve; });
+            return { status: 'ok', baseline: null, deletedSnapshotId: 'baseline-1', completeness: 'complete' };
+        });
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            currentProjectId: '1',
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useBaselineStore.getState().setSnapshot(baselineSnapshot('baseline-1'));
+        const invalidation = vi.spyOn(useTaskStore.getState(), 'invalidateFullDataReads');
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        fireEvent.click(await screen.findByTestId('baseline-delete-button'));
+        fireEvent.click(screen.getByTestId('baseline-delete-confirm-button'));
+        await waitFor(() => expect(deleteBaselineMock).toHaveBeenCalledTimes(1));
+
+        act(() => {
+            window.RedmineCanvasGantt = { ...getCanvasGanttConfig(), projectId: 2, apiBase: '/projects/2/canvas_gantt' };
+            useTaskStore.setState({ currentProjectId: '2' });
+            useBaselineStore.getState().setSnapshot({ ...baselineSnapshot('baseline-2'), projectId: '2' }, ['project 2 warning']);
+            useUIStore.getState().setShowBaseline(true);
+        });
+        await act(async () => finishDelete());
+
+        expect(invalidation).not.toHaveBeenCalled();
+        expect(useBaselineStore.getState()).toMatchObject({
+            snapshot: { snapshotId: 'baseline-2', projectId: '2' },
+            warnings: ['project 2 warning']
+        });
         expect(useUIStore.getState().showBaseline).toBe(true);
     });
 

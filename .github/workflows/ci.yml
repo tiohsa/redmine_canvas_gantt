@@ -243,6 +243,13 @@ jobs:
       - name: Run accessibility mock suite
         run: npx playwright test tests/e2e/gantt-a11y.pw.ts
 
+      - name: Run issue dialog and baseline E2E
+        run: >
+          npx playwright test
+          tests/e2e/dialog-settings-baseline-delete.pw.ts
+          tests/e2e/dialog-settings-layout.pw.ts
+          tests/e2e/issue-dialog-full-screen.pw.ts
+
   e2e-redmine-compat:
     name: Redmine ${{ matrix.label }} compatibility
     needs:
