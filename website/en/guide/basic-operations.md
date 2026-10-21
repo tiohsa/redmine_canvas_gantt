@@ -2,10 +2,6 @@
 
 Canvas Gantt uses Redmine's display language. User-provided issue subjects, project names, and other data keep their original text.
 
-::: info Unreleased correction
-The development version corrects missing translations in controls, tooltips, accessibility labels, and related error messages in Japanese and English. This correction is not yet included in the documented release.
-:::
-
 ## Screen areas
 
 ![Day view of Canvas Gantt 0.18.1 on Redmine 7.0.0.stable, showing issues and dependencies.](/images/canvas-gantt-overview-en.png)
@@ -28,7 +24,7 @@ See the in-app help for other controls and keyboard shortcuts.
 - Drag the task bar body to move its start and due dates together.
 - Drag either edge to adjust one side of the date range.
 
-Selecting a non-working day may adjust the date according to the issue's project calendar: start dates move to the next working day and due dates to the previous working day.
+With **Snap to working days** selected under **Manual scheduling**, non-working dates may move to the next working day for starts or the previous working day for due dates. To place tasks on non-working days, choose **Allow any calendar day** in [display settings](/en/features/display-export).
 
 <video controls preload="metadata" playsinline poster="/images/schedule-edit-poster.png" src="/videos/schedule-edit.mp4" style="width:100%;height:auto" aria-label="moving and resizing a task bar to change its dates"></video>
 
@@ -52,8 +48,8 @@ Available edits depend on the issue's Redmine permissions and workflow. See [Per
 2. Select **Save** to commit pending changes.
 3. Select **Cancel** to discard all unsaved task changes and reload server values. This is not a per-issue or per-field undo.
 
-::: info Development version: dependency drafts
-The development version also includes pending dependency changes in **Save** and **Cancel**. These actions appear as icon-only buttons; the **Save** tooltip shows separate task and dependency counts. See [Dependencies](/en/features/dependencies#manual-save) for how these changes are staged and for cases that cannot be saved together. This behavior is not part of the documented v0.18.0 release.
+::: info Dependency drafts
+Canvas Gantt also includes pending dependency changes in **Save** and **Cancel**. These actions appear as icon-only buttons; the **Save** tooltip shows separate task and dependency counts. See [Dependencies](/en/features/dependencies#manual-save) for how these changes are staged and for cases that cannot be saved together.
 :::
 
 With auto-save on, changes are sent immediately, so **Cancel** is not shown. To reverse a saved change, edit the values in Redmine's issue edit screen.

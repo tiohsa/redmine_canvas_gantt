@@ -24,3 +24,7 @@ Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. See [Introd
 ## Requirements
 
 The plugin targets Redmine 6.0, 6.1, and 7.0 with desktop browsers. Check the [supported environment](/en/guide/introduction#supported-environment); administrators can then follow [Installation and setup](/en/guide/installation).
+
+::: info Screenshots and videos
+Some images and videos were captured with earlier versions. Controls and display settings may differ in v0.19.0. Follow the text on each page for the current steps.
+:::

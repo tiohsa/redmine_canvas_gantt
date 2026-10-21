@@ -21,7 +21,7 @@ test('Japanese and English pages load and language menu reaches the matching gui
 
   await openPage(page, 'ja/guide/introduction')
   await expect(page.locator('main')).toContainText(/Redmine Canvas Gantt/)
-  await expect(page.locator('.manual-scope')).toContainText('v0.18.1')
+  await expect(page.locator('.manual-scope')).toContainText('v0.19.0')
   const overview = page.locator('main img[src$="canvas-gantt-overview-ja.png"]')
   await expect(overview).toBeVisible()
   await expect.poll(() => overview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
@@ -123,6 +123,7 @@ test('all documented screenshots load on their Japanese and English pages', asyn
     'date-cell-edit-en.png',
     'display-settings-en.png',
     'export-menu-en.png',
+    'issue-dialog-settings-en.png',
     'pending-save-en.png',
     'permissions-en.png',
     'relation-editor-en.png',

@@ -113,7 +113,7 @@ Set `REDMINE_CAPTURE_PASSWORD_FILE` to a secure file containing the same tempora
 
 ## バージョン
 
-初回の対象は [v0.18.0](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.0) です。2026-10-11 に GitHub 公開 API で最新安定版を確認しました（公開日時 2026-10-10T17:28:03Z）。注釈付きタグの参照先は `41cb1db30c3f4275088f8ff7056106e76fa2715e` です。README 統合の作業開始時（2026-10-12）の HEAD は `9800ebb` で、対象タグ以降にプラグイン本体の変更がないことをローカル差分で確認しました。マニュアル対象は v0.18.0 のままです。
+初回の対象は [v0.18.0](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.0) です。2026-10-11 に GitHub 公開 API で最新安定版を確認しました（公開日時 2026-10-10T17:28:03Z）。注釈付きタグの参照先は `41cb1db30c3f4275088f8ff7056106e76fa2715e` です。README 統合の作業開始時（2026-10-12）の HEAD は `9800ebb` で、対象タグ以降にプラグイン本体の変更がないことをローカル差分で確認しました。これは初回公開時の記録です。
 
 リリース時は対象タグのコード・テストと本文を照合し、サイト共通バナーと両言語トップの対象版・確認日を更新します。単に `init.rb` の数字を転記して公開済みと扱わないでください。過去版の説明が必要になった場合だけ安定した別パスを追加し、既存 URL は維持します。
 
@@ -128,3 +128,20 @@ README の詳細は Website Docs に集約済みです。README は公開状態�
 ## 依存パッケージの注意
 
 安定版 VitePress 1.6.4 の間接依存 esbuild / Vite に対し、初回 `npm audit` で 3 件（high 1、moderate 2）の通知があり、互換な修正版は提示されませんでした。主な対象は開発サーバーです。開発サーバーはローカルでのみ使用し、外部公開しないでください。Pages には生成済み静的ファイルだけを配信します。VitePress の安定版更新時に依存と通知を再確認してください。
+
+## v0.19.0 への更新（2026-10-21）
+
+対象を v0.19.0 に更新しました。ローカルのタグ参照先と HEAD はともに `31a674c1f30919c2657e9d3d5f72f86bfb2dffc8` です。依存関係の手動保存、保存結果の確認、親日付の扱い、全体 PNG 出力、ダイアログ設定、ベースライン削除をリリース済みの手順として整理しました。画像の撮影記録は下記を参照してください。旧素材の撮影バージョンは維持し、現行 UI と異なる場合があることを日英トップページに明記しています。公開サイトへのデプロイはこのローカル作業には含まれません。
+
+### 表示設定・出力メニューの再撮影
+
+2026-10-21 に Redmine 7.0.2 / Canvas Gantt v0.19.0 で日英の `display-settings-*.png` と `export-menu-*.png` を更新し、`issue-dialog-settings-*.png` を追加しました。独立した一時コンテナの SQLite に `manual-demo.rb` の架空データを投入し、共有 DB は使用していません。設定パネルはスクロール位置を変えて撮影しています。ダイアログの幅・高さ・画面全体表示と、全体 PNG のメニュー項目を実画面で確認し、両言語で全体 PNG のダウンロード成功・ブラウザーエラーなしを確認しました。動画は更新していません。
+
+準備済みの撮影環境で、表示言語とアカウントの言語を揃えて実行します（URL・パスワードファイルの指定は上記と同じ）。
+
+```sh
+REDMINE_CAPTURE_LOCALE=en node scripts/capture-display.mjs
+REDMINE_CAPTURE_LOCALE=ja node scripts/capture-display.mjs
+```
+
+ダウンロードした検証用 PNG は `/tmp/manual-full-export-en.png` と `/tmp/manual-full-export-ja.png` に保存されます。その他の画像・動画は従来の撮影記録のままです。

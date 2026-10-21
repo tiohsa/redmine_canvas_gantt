@@ -8,7 +8,7 @@
 - 選択した Redmine がサポートする Ruby
 - Redmine REST API を有効化
 - デスクトップ版 Google Chrome または Microsoft Edge（その他のブラウザは未検証）
-- SPA をソースからビルドするときのみ Node.js 20 以降
+- SPA をソースからビルドするときのみ Node.js 20.19 以降または 22.12 以降
 
 ## 新規インストール
 
@@ -16,7 +16,7 @@
 
    ```sh
    cd /path/to/redmine/plugins
-   git clone --branch v0.18.1 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
+   git clone --branch v0.19.0 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
    ```
 
 2. Redmine アプリケーションサーバーを再起動します。
@@ -37,7 +37,7 @@ DB マイグレーションは不要です。チケット操作に必要な標�
 
 ### ソースからビルドする（必要な場合のみ） {#build-from-source}
 
-リリースに含まれるビルド済みの `assets/build/` をそのまま使う場合、この操作と Node.js / npm は不要です。SPA のソースを変更した場合や、ビルド済みアセットを含まないソースから導入する場合のみ、Node.js 20 以降で実行します。
+リリースに含まれるビルド済みの `assets/build/` をそのまま使う場合、この操作と Node.js / npm は不要です。SPA のソースを変更した場合や、ビルド済みアセットを含まないソースから導入する場合のみ、Node.js 20.19 以降または 22.12 以降で実行します。
 
 ```sh
 cd /path/to/redmine/plugins/redmine_canvas_gantt/spa

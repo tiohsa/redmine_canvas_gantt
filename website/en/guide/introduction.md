@@ -27,7 +27,7 @@ Canvas Gantt uses Redmine's issues and permissions. Users need `view_canvas_gant
 
 The plugin supports Redmine 6.0, 6.1, and 7.0. CI references Redmine 6.0.6, 6.1.2, and 7.0.0; that does not establish support for every patch release in those series. Use a Ruby version supported by the selected Redmine version.
 
-Node.js is not required for normal operation. Node.js 20 or newer is required to build the SPA from source or use frontend development tools. Enable Redmine's REST API.
+Node.js is not required for normal operation. Node.js 20.19 or newer, or 22.12 or newer, is required to build the SPA from source or use frontend development tools. Enable Redmine's REST API.
 
 Tested with desktop versions of Google Chrome and Microsoft Edge. Other browsers have not been tested.
 

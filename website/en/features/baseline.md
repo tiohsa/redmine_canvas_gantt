@@ -24,19 +24,15 @@ Open the toolbar's **Save Baseline** menu and select **Show baseline comparison*
 
 Saved baseline comparison. [View full-size image](/images/baseline-compare-en.png)
 
-## Delete a saved baseline (development feature)
+## Delete a saved baseline
 
-Baseline deletion is under development and is not included in release v0.18.0. In the development version, the delete control removes the single snapshot saved for the current project, including a snapshot saved from a filtered view; it does not delete only the currently visible issues. Before deletion, a confirmation dialog shows the snapshot's save time, saver, and scope and warns that the action cannot be undone. Deletion does not change issues or their current dates.
+Choose delete from the baseline menu, check the save time, saver, and scope, then confirm. This removes the entire snapshot for the current project. Issues and current dates are unaffected. Deletion cannot be undone.
 
-In the development version, the delete control is available to users who can manage project baselines. If another user replaces the snapshot before deletion, the dialog refreshes the current baseline and does not retry the old snapshot ID. When the server's result is uncertain, Canvas Gantt refreshes the baseline state and does not automatically send the deletion again.
-
-The confirmation dialog uses the same rounded button design as the issue dialog for Cancel and Delete.
-
-In the development version, a deletion request times out after 15 seconds, followed by up to 10 seconds of checking the server state. A timeout does not prove that deletion failed. If the result still cannot be confirmed, an error notification appears and the confirmation dialog closes so you can continue using the chart. The displayed snapshot is retained until a current server response confirms its state; the deletion request is not automatically retried.
+If another user replaces the baseline, review the latest snapshot before continuing. A timeout does not prove deletion failed. If the result cannot be confirmed, an error appears and the request is not resent automatically. Check the current state before trying again.
 
 ## Permissions and storage
 
 - `view_canvas_gantt` is required to view baseline comparison.
-- `manage_canvas_gantt_baseline` is required to save or replace a baseline.
+- `manage_canvas_gantt_baseline` is required to save, replace, or delete a baseline.
 - See [Administration settings](/en/administration/settings) for baseline storage and settings management.
 - See [Installation and removal](/en/guide/installation) for data removal during uninstall.

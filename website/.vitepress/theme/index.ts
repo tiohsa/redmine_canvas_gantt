@@ -14,11 +14,11 @@ export default {
               { class: 'manual-scope', role: 'note' },
               lang.value.startsWith('ja')
                 ? [
-                    '対象バージョン: v0.18.1。',
+                    '対象バージョン: v0.19.0。',
                     ' ',
                     h(
                       'a',
-                      { href: 'https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.1' },
+                      { href: 'https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.19.0' },
                       '対象リリース',
                     ),
                     ...(page.value.isNotFound
@@ -30,11 +30,11 @@ export default {
                       : []),
                   ]
                 : [
-                    'Manual version: v0.18.1.',
+                    'Manual version: v0.19.0.',
                     ' ',
                     h(
                       'a',
-                      { href: 'https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.1' },
+                      { href: 'https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.19.0' },
                       'Release notes',
                     ),
                     ...(page.value.isNotFound

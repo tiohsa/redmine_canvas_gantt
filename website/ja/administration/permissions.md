@@ -7,15 +7,15 @@ Canvas Gantt の表示権限と、チケットに対する操作権限は別々�
 | 権限 | 用途 |
 | --- | --- |
 | `view_canvas_gantt` | プロジェクトの Canvas Gantt を表示する |
-| `manage_canvas_gantt_baseline` | ベースラインを保存・置換する |
+| `manage_canvas_gantt_baseline` | ベースラインを保存・置換・削除する |
 
-ベースラインの比較表示には `view_canvas_gantt` が必要です。保存には `manage_canvas_gantt_baseline` が必要です。ベースラインはプロジェクトごとに 1 件で、新しい保存は既存スナップショットを置き換えます。
+ベースラインの比較表示には `view_canvas_gantt` が必要です。保存・置換・削除には `manage_canvas_gantt_baseline` が必要です。ベースラインはプロジェクトごとに 1 件で、新しい保存は既存スナップショットを置き換えます。
 
 ![Canvas Gantt の権限設定。](/images/permissions-ja.png)
 
 日本語表示の権限設定画面。権限名の一部は英語で表示されます。[画像を拡大](/images/permissions-ja.png)
 
-旧 `edit_canvas_gantt` 権限を使っていた場合、現在の権限へ自動移行されません。ベースライン保存を続けるロールにだけ `manage_canvas_gantt_baseline` を付け直してください。通常のチケット編集権限の代わりに Canvas Gantt 固有権限を使うことはありません。
+旧 `edit_canvas_gantt` 権限を使っていた場合、現在の権限へ自動移行されません。ベースラインを管理するロールにだけ `manage_canvas_gantt_baseline` を付け直してください。通常のチケット編集権限の代わりに Canvas Gantt 固有権限を使うことはありません。
 
 <a id="issue-操作に使われる-redmine-標準権限"></a>
 
@@ -33,7 +33,7 @@ Canvas Gantt の表示権限と、チケットに対する操作権限は別々�
 ## 推奨する確認手順
 
 1. **管理 → ロールと権限**で、閲覧者には必要に応じて `view_canvas_gantt` を付与します。
-2. ベースライン保存担当のロールにだけ `manage_canvas_gantt_baseline` を付与します。
+2. ベースライン管理担当のロールにだけ `manage_canvas_gantt_baseline` を付与します。
 3. チケットの編集、削除、子チケット作成を許可する場合は、対象プロジェクトの標準権限をそれぞれ設定します。
 4. プロジェクトの**設定 → モジュール**で Canvas Gantt が有効なことを確認します。
 5. 権限を付与したテストユーザーで対象プロジェクトと、必要なら別プロジェクトのチケットを確認します。
