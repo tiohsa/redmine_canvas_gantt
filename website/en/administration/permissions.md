@@ -7,15 +7,15 @@ Canvas Gantt access and issue actions are authorized separately. Grant only the 
 | Permission | Purpose |
 | --- | --- |
 | `view_canvas_gantt` | View Canvas Gantt in a project |
-| `manage_canvas_gantt_baseline` | Save or replace a baseline |
+| `manage_canvas_gantt_baseline` | Save, replace, or delete a baseline |
 
-Viewing a baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `manage_canvas_gantt_baseline`. Each project has one baseline snapshot; saving another replaces it.
+Viewing a baseline comparison requires `view_canvas_gantt`. Saving, replacing, or deleting a baseline requires `manage_canvas_gantt_baseline`. Each project has one baseline snapshot; saving another replaces it.
 
 ![Canvas Gantt permission assignments.](/images/permissions-en.png)
 
 [View full-size image](/images/permissions-en.png)
 
-If a role used the retired `edit_canvas_gantt` permission, it is not migrated automatically. Reassign `manage_canvas_gantt_baseline` only to roles that should continue saving baselines. Canvas Gantt permissions do not replace normal issue permissions.
+If a role used the retired `edit_canvas_gantt` permission, it is not migrated automatically. Reassign `manage_canvas_gantt_baseline` only to roles that should manage baselines. Canvas Gantt permissions do not replace normal issue permissions.
 
 ## Standard Redmine permissions used for issue actions
 
@@ -31,7 +31,7 @@ These checks use the project that owns the issue being changed, not only the pro
 ## Recommended review steps
 
 1. In **Administration → Roles and permissions**, grant `view_canvas_gantt` to roles that need chart access.
-2. Grant `manage_canvas_gantt_baseline` only to roles allowed to save baselines.
+2. Grant `manage_canvas_gantt_baseline` only to roles allowed to manage baselines.
 3. Configure the standard project permissions for issue editing, deletion, and child creation as needed.
 4. Confirm Canvas Gantt is enabled under the project's **Settings → Modules**.
 5. Verify access with a test account in the target project and, if needed, for issues in another project.

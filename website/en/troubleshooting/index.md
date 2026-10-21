@@ -15,7 +15,7 @@ Permission to view Canvas Gantt does not grant issue actions. Check the standard
 
 - If auto-save is off, use the save action after editing. Do not leave the page before saving pending changes.
 - Check the target issue's edit permission, validation errors, and messages returned by Redmine. See [Permissions](/en/administration/permissions) for the required permission.
-- In the development version, if you see “The latest task data could not be refreshed,” any changes confirmed as saved are retained. Once the latest state can be refreshed, review and save any pending dependency changes. You do not need to enter confirmed saved date changes again.
+- If you see “The latest task data could not be refreshed,” any changes confirmed as saved are retained. Once the latest state can be refreshed, review and save any pending dependency changes. You do not need to enter confirmed saved date changes again.
 - With a business calendar configured, selecting a non-working date can move the start date forward to the next working day and the due date backward to the previous working day.
 - Setting the start date to **Today** on a non-working day can move it to the next working day. Then setting the due date to **Today** fails because it is before the current start date. Check the start date in the list and choose a due date on or after it. To place dates on non-working days, change Date placement to **Allow any calendar day**.
 - If the conflict panel lists issues, review the differences using the steps below.
@@ -47,7 +47,7 @@ Review saved Redmine query and URL conditions such as status, assignee, project,
 ## The chart is blank, distorted, or stale
 
 - Clear filters and use **Today** or zoom controls to return to a useful timeline position.
-- Check that you are using a current supported desktop version of Chrome, Edge, Firefox, or Safari, with JavaScript and `localStorage` enabled. Mobile browsers and embedded webviews are outside the tested support matrix.
+- Use desktop Chrome or Edge, the browsers tested for this release, and enable JavaScript and `localStorage`. Other browsers, mobile browsers, and embedded webviews are outside the tested support matrix.
 - Check that `CANVAS_GANTT_USE_VITE_DEV_SERVER=1` is not set on production Redmine. When enabled for development, the Vite dev server must also be running.
 - Check failed data requests in the browser's developer tools. An oversized complete data response returns HTTP 413; narrow the query if appropriate.
 - After updating assets, restart Redmine and force-reload the page.
@@ -68,7 +68,7 @@ Check the file location and permissions for the Redmine process. Changes are che
 
 ### Why is a baseline missing or unavailable to save?
 
-Viewing a baseline requires `view_canvas_gantt`; saving one requires `manage_canvas_gantt_baseline`. Each project has one baseline, and saving another replaces it. See [Permissions](/en/administration/permissions) for details.
+Viewing a baseline requires `view_canvas_gantt`; saving, replacing, or deleting one requires `manage_canvas_gantt_baseline`. Each project has one baseline, and saving another replaces it. See [Permissions](/en/administration/permissions) for details.
 
 ## Report an issue on GitHub
 

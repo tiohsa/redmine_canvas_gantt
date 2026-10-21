@@ -2,9 +2,9 @@
 
 Parent-child relationships are the Redmine issue hierarchy. You can move rows in the sidebar or create multiple child issues from Redmine's child issue form.
 
-**Development version (not yet released):** Redmine's derived parent dates are server-managed. Child schedule edits update the parent through Redmine's callbacks; the client preview may use only the loaded children, while the saved schedule and refreshed parent dates come from Redmine. Direct date edits on a derived parent are rejected; other editable fields remain available. Canvas Gantt 0.18.0 does not include this fix.
+Parent dates derived from children cannot be edited directly. Redmine recalculates them when child dates are saved. Other fields remain editable according to permissions.
 
-Dependency-driven changes involving a derived parent are also calculated by Redmine when saving. The preview may therefore differ from the saved schedule, especially when some children are excluded by the query. Parents with manually configured dates keep their existing scheduling behavior.
+Previews use loaded children, so filters that hide some children can cause saved dates to differ. Schedules involving dependencies on these parents are also recalculated when saved.
 
 ## Change a parent-child relationship
 

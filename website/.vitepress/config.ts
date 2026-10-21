@@ -115,7 +115,7 @@ export default defineConfig({
       text: 'Edit this page',
     },
     footer: {
-      message: 'Manual version: v0.18.1',
+      message: 'Manual version: v0.19.0',
       copyright: 'Redmine Canvas Gantt contributors',
     },
   },
@@ -146,7 +146,7 @@ export default defineConfig({
           text: 'このページを編集',
         },
         footer: {
-          message: '対象バージョン: v0.18.1',
+          message: '対象バージョン: v0.19.0',
           copyright: 'Redmine Canvas Gantt contributors',
         },
       },
@@ -170,7 +170,7 @@ export default defineConfig({
           text: 'Edit this page',
         },
         footer: {
-          message: 'Manual version: v0.18.1',
+          message: 'Manual version: v0.19.0',
           copyright: 'Redmine Canvas Gantt contributors',
         },
       },

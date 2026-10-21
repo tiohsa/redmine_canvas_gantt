@@ -8,7 +8,7 @@ These installation and upgrade steps are for administrators. Adjust paths and se
 - A Ruby version supported by the selected Redmine release
 - Redmine REST API enabled
 - Desktop Google Chrome or Microsoft Edge (other browsers have not been tested)
-- Node.js 20 or newer only when building the SPA from source
+- Node.js 20.19 or newer, or 22.12 or newer only when building the SPA from source
 
 ## Install
 
@@ -16,7 +16,7 @@ These installation and upgrade steps are for administrators. Adjust paths and se
 
    ```sh
    cd /path/to/redmine/plugins
-   git clone --branch v0.18.1 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
+   git clone --branch v0.19.0 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
    ```
 
 2. Restart the Redmine application server.
@@ -37,7 +37,7 @@ There are no database migrations. Baselines stored in Redmine settings and displ
 
 ### Build from source (only when needed)
 
-When using the prebuilt `assets/build/` included in the release, you do not need this step or Node.js / npm. Build with Node.js 20 or newer only if you modify the SPA source or install from source without prebuilt assets.
+When using the prebuilt `assets/build/` included in the release, you do not need this step or Node.js / npm. Build with Node.js 20.19 or newer, or 22.12 or newer only if you modify the SPA source or install from source without prebuilt assets.
 
 ```sh
 cd /path/to/redmine/plugins/redmine_canvas_gantt/spa
