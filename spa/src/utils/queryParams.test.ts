@@ -15,6 +15,44 @@ import { serializeRedmineIssueQueryParams } from '../query/redmineQueryUrlCodec'
 import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 
 describe('parseResolvedQueryState', () => {
+    it.each([undefined, null, '7', 7, {}])('ignores non-array selections: %j', (value) => {
+        const parsed = parseResolvedQueryState({
+            selected_assignee_ids: value,
+            selected_version_ids: value
+        });
+
+        expect(parsed?.selectedAssigneeIds).toBeUndefined();
+        expect(parsed?.selectedVersionIds).toBeUndefined();
+    });
+
+    it('preserves explicit empty selections', () => {
+        const parsed = parseResolvedQueryState({
+            selected_assignee_ids: [],
+            selected_version_ids: []
+        });
+
+        expect(parsed?.selectedAssigneeIds).toEqual([]);
+        expect(parsed?.selectedVersionIds).toEqual([]);
+    });
+
+    it('normalizes assignees and keeps the first occurrence order', () => {
+        const parsed = parseResolvedQueryState({
+            selected_assignee_ids: ['7', null, 'none', '_none', 7, 'invalid', undefined,
+                Infinity, -Infinity, NaN, '', 0, '02', 2, -3, '1.5']
+        });
+
+        expect(parsed?.selectedAssigneeIds).toEqual([7, null, 0, 2, -3, 1.5]);
+    });
+
+    it('preserves version ID spelling and deduplicates normalized sentinels in order', () => {
+        const parsed = parseResolvedQueryState({
+            selected_version_ids: ['7', 'none', '_none', 7, null, undefined, 'invalid',
+                Infinity, NaN, '', '02', 2, -3, '1.5', ' 4 ', '+5']
+        });
+
+        expect(parsed?.selectedVersionIds).toEqual(['7', '_none', '02', '2', '-3']);
+    });
+
     it('accepts backend boolean grouping payload', () => {
         const parsed = parseResolvedQueryState({
             query_id: 42,
