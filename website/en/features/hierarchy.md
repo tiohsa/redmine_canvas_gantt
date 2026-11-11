@@ -6,6 +6,10 @@ Parent dates derived from children cannot be edited directly. Redmine recalculat
 
 Previews use loaded children, so filters that hide some children can cause saved dates to differ. Schedules involving dependencies on these parents are also recalculated when saved.
 
+::: warning Development version
+In the development version, when Redmine manages parent dates manually, parent dates recalculated after child edits are also included in the save. Parent dates derived from children remain preview-only and are recalculated by the server.
+:::
+
 ## Change a parent-child relationship
 
 1. Drag the issue row that should become a child.

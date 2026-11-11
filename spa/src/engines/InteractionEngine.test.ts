@@ -1796,7 +1796,7 @@ describe('InteractionEngine multi-task drag and drop', () => {
         const monday = parseDateOnly('2026-07-06')!;
         const tuesday = parseDateOnly('2026-07-07')!;
         setViewport({ startDate: monday, scale: 10 / DAY_MS, rowHeight: 36 });
-        const parent = baseTask({ id: 'parent', startDate: monday, dueDate: tuesday, hasChildren: true, editable: false });
+        const parent = baseTask({ id: 'parent', startDate: monday, dueDate: tuesday, hasChildren: true, datesDerived: true, editable: false });
         const child = baseTask({ id: 'child', parentId: 'parent', rowIndex: 1, projectId: 'p2', startDate: monday, dueDate: tuesday });
         const sibling = baseTask({ id: 'sibling', parentId: 'parent', rowIndex: 2, projectId: 'p2', startDate: monday, dueDate: tuesday });
         seedTasks([parent, child, sibling], { selectedTaskIds: ['parent', 'child'], selectedTaskId: 'parent', localTaskPatches: {}, editGenerations: {} });
@@ -2219,6 +2219,80 @@ describe('InteractionEngine multi-task drag and drop', () => {
 
         engine.detach();
         container.remove();
+    });
+
+    it.each([
+        { editable: false },
+        { datesDerived: true },
+        { startDate: undefined, dueDate: undefined },
+        { hasChildren: true }
+    ])('collapses a blocked multi-selection on click without starting a mutation: %o', (invalid) => {
+        const monday = parseDateOnly('2026-07-06')!;
+        const tuesday = parseDateOnly('2026-07-07')!;
+        setViewport({ startDate: monday, scale: 10 / DAY_MS, rowHeight: 36 });
+        const first = baseTask({ id: 'first', startDate: monday, dueDate: tuesday, hasChildren: invalid.hasChildren ?? false });
+        const second = baseTask({ id: 'second', rowIndex: 1, startDate: monday, dueDate: tuesday, ...invalid });
+        seedTasks([first, second], { selectedTaskIds: ['first', 'second'], selectedTaskId: 'second', autoSave: true });
+        const begin = vi.spyOn(useTaskStore.getState(), 'beginBarOperation');
+        const save = vi.spyOn(useTaskStore.getState(), 'saveChanges');
+        const notify = vi.spyOn(useUIStore.getState(), 'addNotification');
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        try {
+            const bounds = LayoutEngine.getTaskBounds(first, useTaskStore.getState().viewport, 'hit', 2);
+            const x = bounds.x + bounds.width / 2;
+            const y = bounds.y + bounds.height / 2;
+            container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['first', 'second']);
+            window.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y, bubbles: true }));
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['first']);
+            expect(useTaskStore.getState().tasks).toEqual([first, second]);
+            expect(begin).not.toHaveBeenCalled();
+            expect(save).not.toHaveBeenCalled();
+            expect(notify).toHaveBeenCalledWith(expect.any(String), 'warning');
+        } finally {
+            begin.mockRestore();
+            save.mockRestore();
+            notify.mockRestore();
+            engine.detach();
+            container.remove();
+        }
+    });
+
+    it('cancels a blocked click after three pixels and clears pending clicks on a new press or detach', () => {
+        const monday = parseDateOnly('2026-07-06')!;
+        const tuesday = parseDateOnly('2026-07-07')!;
+        setViewport({ startDate: monday, scale: 10 / DAY_MS, rowHeight: 36 });
+        const first = baseTask({ id: 'first', startDate: monday, dueDate: tuesday });
+        const second = baseTask({ id: 'second', rowIndex: 1, startDate: monday, dueDate: tuesday, editable: false });
+        seedTasks([first, second], { selectedTaskIds: ['first', 'second'], selectedTaskId: 'first' });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const bounds = LayoutEngine.getTaskBounds(first, useTaskStore.getState().viewport, 'hit', 2);
+        const x = bounds.x + bounds.width / 2;
+        const y = bounds.y + bounds.height / 2;
+        const down = () => container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+        try {
+            down();
+            window.dispatchEvent(new MouseEvent('mousemove', { clientX: x + 3, clientY: y, bubbles: true }));
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['first', 'second']);
+            expect(useTaskStore.getState().tasks).toEqual([first, second]);
+
+            down();
+            container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, ctrlKey: true, bubbles: true }));
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['second']);
+
+            useTaskStore.setState({ selectedTaskIds: ['first', 'second'], selectedTaskId: 'first' });
+            down();
+            engine.detach();
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['first', 'second']);
+        } finally {
+            engine.detach();
+            container.remove();
+        }
     });
 
     it('WorkingDays mode dragging across weekends/holidays preserves working day durations', async () => {

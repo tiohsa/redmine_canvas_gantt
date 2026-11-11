@@ -2554,7 +2554,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         pendingUpdates.forEach((fields, taskId) => {
             const affectedTask = taskById.get(taskId);
-            const mutationIntent = affectedTask && (affectedTask.datesDerived || affectedTask.hasChildren)
+            const mutationIntent = affectedTask?.datesDerived
                 ? Object.fromEntries(Object.entries(fields).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
                 : fields;
             patchFor(taskId, fields, mutationIntent);

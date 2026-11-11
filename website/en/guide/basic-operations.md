@@ -34,6 +34,8 @@ The following group-drag behavior is under development and is not part of the do
 In the development version, both single and group bar moves in working-day mode convert the movement into a working-day count using the grabbed issue. The same count is applied to every selected issue using its project calendar, preserving working-day duration. Dates aligned under the same calendar remain aligned; different project calendars may produce different dates. Issues with only a start or due date retain the missing endpoint.
 :::
 
+In the development version, clicking the body of a selected bar without modifier keys and releasing without moving selects only that issue. This also works when the selection contains issues that cannot move or consists only of parents. Dragging a selection that cannot move preserves its dates and multiple selection.
+
 ## Edit a cell
 
 1. Show the column you want from the column menu.

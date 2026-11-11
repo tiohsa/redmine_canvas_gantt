@@ -166,6 +166,44 @@ describe('TaskStore canonical mutation reconciliation', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
+    it('persists and settles recalculated dates for a manually scheduled parent', async () => {
+        const parent = buildTask({ id: 'manual-parent', hasChildren: true, startDate: MONDAY, dueDate: WEDNESDAY, lockVersion: 4 });
+        const child = buildTask({ id: 'manual-child', parentId: parent.id, startDate: MONDAY, dueDate: WEDNESDAY, lockVersion: 2 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [
+                { id: parent.id, startDate: MONDAY, dueDate: FRIDAY, lockVersion: 5 },
+                { id: child.id, startDate: MONDAY, dueDate: FRIDAY, lockVersion: 3 }
+            ],
+            revisions: { [parent.id]: 5, [child.id]: 3 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true, writable: true });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...parent, dueDate: FRIDAY, lockVersion: 5 }, { ...child, dueDate: FRIDAY, lockVersion: 3 }
+        ]));
+
+        try {
+            useTaskStore.setState({ autoSave: false });
+            useTaskStore.getState().setTasks([parent, child]);
+            useTaskStore.getState().updateTask(child.id, { dueDate: FRIDAY });
+
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set([child.id, parent.id]));
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toEqual([
+                expect.objectContaining({ mutationIntent: expect.objectContaining({ dueDate: FRIDAY }) })
+            ]);
+            expect(await useTaskStore.getState().saveChanges()).toEqual(new Map());
+            expect(scheduleMutation.mock.calls[0][0]).toEqual(expect.arrayContaining([
+                expect.objectContaining({ taskId: parent.id, dueDate: FRIDAY }),
+                expect.objectContaining({ taskId: child.id, dueDate: FRIDAY })
+            ]));
+            expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toBeUndefined();
+            expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)).toMatchObject({ dueDate: FRIDAY, lockVersion: 5 });
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
     it('projects derived parent dates without writing them and settles from an unchanged canonical ancestor', async () => {
         const parent = buildTask({
             id: 'derived-parent', startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4

@@ -39,7 +39,6 @@ interface DragState {
     startX: number;
     startY: number;
     taskId: string | null;
-    clickedTaskId?: string | null;
     originalStartDate: number | undefined;
     originalDueDate: number | undefined;
     anchorProjectId?: string;
@@ -47,12 +46,11 @@ interface DragState {
     datePlacementMode: DatePlacementModeValue;
     cohort?: DragCohortMember[];
     lastCalendarDayDelta?: number;
-    collapseSelectionOnMouseUp?: boolean;
-    hasMoved?: boolean;
 }
 
 export class InteractionEngine {
     private container: HTMLElement;
+    private pendingClick: { taskId: string; startX: number; startY: number } | null = null;
     private drag: DragState = {
         mode: 'none',
         startX: 0,
@@ -101,6 +99,7 @@ export class InteractionEngine {
     }
 
     public detach() {
+        this.pendingClick = null;
         this.container.removeEventListener('mousedown', this.handleMouseDown);
         window.removeEventListener('mousemove', this.handleMouseMove);
         window.removeEventListener('mouseup', this.handleMouseUp);
@@ -299,6 +298,7 @@ export class InteractionEngine {
     }
 
     private handleMouseDown = (e: MouseEvent) => {
+        this.pendingClick = null;
         if (e.button === 2) return; // Ignore right-click
         if (this.isScrollInteractionLocked()) return;
 
@@ -335,12 +335,11 @@ export class InteractionEngine {
                 return;
             }
 
-            let collapseSelectionOnMouseUp = false;
             if (resolvedHit.region === 'body') {
                 const currentSelected = useTaskStore.getState().selectedTaskIds;
                 if (currentSelected.length > 1 && currentSelected.includes(resolvedHit.task.id)) {
                     useTaskStore.setState({ selectedTaskId: resolvedHit.task.id });
-                    collapseSelectionOnMouseUp = true;
+                    this.pendingClick = { taskId: resolvedHit.task.id, startX: e.clientX, startY: e.clientY };
                 } else {
                     useTaskStore.getState().selectTask(resolvedHit.task.id);
                 }
@@ -391,16 +390,13 @@ export class InteractionEngine {
                     startX: e.clientX,
                     startY: e.clientY,
                     taskId: grabbedTask.id,
-                    clickedTaskId: resolvedHit.task.id,
                     originalStartDate: grabbedTask.startDate,
                     originalDueDate: grabbedTask.dueDate,
                     anchorProjectId: grabbedTask.projectId,
                     barOperationId: operationId,
                     datePlacementMode: useUIStore.getState().datePlacementMode,
                     cohort: cohortMembers,
-                    lastCalendarDayDelta: 0,
-                    collapseSelectionOnMouseUp,
-                    hasMoved: false
+                    lastCalendarDayDelta: 0
                 };
             } else if (resolvedHit.region === 'start' || resolvedHit.region === 'end') {
                 if (resolvedHit.task.hasChildren) {
@@ -448,6 +444,9 @@ export class InteractionEngine {
     };
 
     private handleMouseMove = (e: MouseEvent) => {
+        if (this.pendingClick && Math.hypot(e.clientX - this.pendingClick.startX, e.clientY - this.pendingClick.startY) >= 3) {
+            this.pendingClick = null;
+        }
         const { viewport, updateTask, setHoveredTask } = useTaskStore.getState();
 
         // Hover logic (only update when not dragging a task)
@@ -515,9 +514,7 @@ export class InteractionEngine {
                 calendarDayDelta = diffCalendarDays(this.drag.originalDueDate!, candidateDue);
             }
 
-            if (Math.hypot(dx, dy) >= 3 || calendarDayDelta !== 0) {
-                this.drag.hasMoved = true;
-            }
+            if (calendarDayDelta !== 0) this.pendingClick = null;
             if (calendarDayDelta === this.drag.lastCalendarDayDelta) return;
             this.drag.lastCalendarDayDelta = calendarDayDelta;
 
@@ -654,9 +651,8 @@ export class InteractionEngine {
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && Boolean(draggedTaskId);
         const barOperationId = this.drag.barOperationId;
-        const collapseSelectionOnMouseUp = this.drag.collapseSelectionOnMouseUp;
-        const hasMoved = this.drag.hasMoved;
-        const clickedTaskId = this.drag.clickedTaskId;
+        const pendingClick = this.pendingClick;
+        this.pendingClick = null;
 
         // Resume sorting (will trigger re-layout)
         useTaskStore.getState().setSortingSuspended(false);
@@ -674,14 +670,14 @@ export class InteractionEngine {
         this.container.style.cursor = DEFAULT_CURSOR;
 
         if (wasDragging && draggedTaskId) {
-            const { autoSave, saveChanges, endBarOperation, selectTask } = useTaskStore.getState();
+            const { autoSave, saveChanges, endBarOperation } = useTaskStore.getState();
             if (barOperationId) endBarOperation(barOperationId);
-            if (collapseSelectionOnMouseUp && !hasMoved && clickedTaskId) {
-                selectTask(clickedTaskId);
-            }
+            if (pendingClick) useTaskStore.getState().selectTask(pendingClick.taskId);
             if (autoSave && barOperationId && useTaskStore.getState().barOperations[barOperationId]) {
                 saveChanges().catch(console.error);
             }
+        } else if (pendingClick) {
+            useTaskStore.getState().selectTask(pendingClick.taskId);
         }
     };
 
