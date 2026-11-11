@@ -1006,6 +1006,7 @@ const resolveCascadingScheduleUpdates = (
     let workingTasks = tasks;
     const updates = new Map<string, Partial<Task>>();
     const affectedTaskIds = new Set(seedTaskIds);
+    const permissionRequiredIds = new Set(affectedTaskIds);
     let frontier = new Set(affectedTaskIds);
     const maxPasses = Math.max(1, tasks.length * 2);
 
@@ -1056,15 +1057,20 @@ const resolveCascadingScheduleUpdates = (
                 ignoredTaskIds
             );
             if (result.error) return { tasks, updates: new Map(), error: result.error };
-            applyUpdates(result.updates).forEach((changedId) => changedIds.add(changedId));
+            applyUpdates(result.updates).forEach((changedId) => {
+                permissionRequiredIds.add(changedId);
+                changedIds.add(changedId);
+            });
         }
 
         frontier = changedIds;
     }
 
+    // Derived ancestor dates are previews, not independent mutations. Actual
+    // schedule seeds and dependency updates still require edit permission.
     const nonEditableTask = [...affectedTaskIds]
         .map((taskId) => workingTasks.find((task) => task.id === taskId))
-        .find((task) => task && !TaskLogicService.canEditTask(task));
+        .find((task) => task && (permissionRequiredIds.has(task.id) || (!task.datesDerived && !task.hasChildren)) && !TaskLogicService.canEditTask(task));
     if (nonEditableTask) {
         return {
             tasks,
@@ -2036,7 +2042,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({
         contextMenu: menu,
-        ...(menu ? { selectedRelationId: null, draftRelation: null } : {})
+        ...(menu ? {
+            selectedTaskId: menu.taskId,
+            selectedTaskIds: [menu.taskId],
+            selectionAnchorId: menu.taskId,
+            selectedRelationId: null,
+            draftRelation: null
+        } : {})
     }),
     setSortingSuspended: (suspended) => set((state) => {
         if (!suspended && state.isSortingSuspended) {
@@ -2542,7 +2554,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         pendingUpdates.forEach((fields, taskId) => {
             const affectedTask = taskById.get(taskId);
-            const mutationIntent = affectedTask?.datesDerived
+            const mutationIntent = affectedTask && (affectedTask.datesDerived || affectedTask.hasChildren)
                 ? Object.fromEntries(Object.entries(fields).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
                 : fields;
             patchFor(taskId, fields, mutationIntent);

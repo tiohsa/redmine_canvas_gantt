@@ -133,6 +133,27 @@ describe('UiSidebar', () => {
         expect(screen.getByTestId('task-id-123')).toHaveTextContent('123');
     });
 
+    it.each(['first', 'third'])('selects only the right-clicked sidebar task %s', (targetId) => {
+        useTaskStore.setState({ viewport: { startDate: 0, scrollX: 0, scrollY: 0, scale: 1, width: 800, height: 600, rowHeight: 32 }, groupByProject: false });
+        const tasks: Task[] = ['first', 'second', 'third'].map((id, rowIndex) => ({
+            id, subject: id, ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex, hasChildren: false
+        }));
+        useTaskStore.getState().setTasks(tasks);
+        useTaskStore.setState({ selectedTaskId: 'second', selectedTaskIds: ['first', 'second'], selectionAnchorId: 'first' });
+        render(<UiSidebar />);
+        const row = screen.getByTestId(`cell-${targetId}-subject`).closest('.task-row')!;
+        fireEvent.contextMenu(row, { clientX: 15, clientY: 25 });
+        expect(useTaskStore.getState()).toMatchObject({ selectedTaskId: targetId, selectedTaskIds: [targetId],
+            selectionAnchorId: targetId, contextMenu: { taskId: targetId, x: 15, y: 25 } });
+    });
+
+    it('clears multi-selection when right-clicking blank sidebar space', () => {
+        useTaskStore.setState({ selectedTaskId: 'second', selectedTaskIds: ['first', 'second'], selectionAnchorId: 'first' });
+        render(<UiSidebar />);
+        fireEvent.contextMenu(screen.getByTestId('sidebar-body'));
+        expect(useTaskStore.getState()).toMatchObject({ selectedTaskId: null, selectedTaskIds: [], selectionAnchorId: null });
+    });
+
     it('renders the author as read-only metadata', () => {
         const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['author']);
         useUIStore.setState({ visibleColumns: ['author'], columnSettings });

@@ -992,6 +992,10 @@ export const UiSidebar: React.FC = () => {
                     transition: 'background-color 0.2s, box-shadow 0.2s'
                 }}
                 onWheel={handleWheel}
+                onContextMenu={() => {
+                    const state = useTaskStore.getState();
+                    if (state.selectedTaskIds.length > 1) state.selectTask(null);
+                }}
                 onDragOver={handleRootDragOver}
                 onDrop={(e) => { void handleRootDrop(e); }}
                 onDragLeave={handleBodyDragLeave}

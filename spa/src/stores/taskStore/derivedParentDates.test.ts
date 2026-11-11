@@ -38,7 +38,7 @@ describe('derived parent schedule persistence', () => {
 
     it.each([false, true])('saves weekend child dates without writing either ancestor, autoSave=%s', async autoSave => {
         const grandparent = task('grandparent', { datesDerived: true, startDate: date(4), dueDate: date(15) });
-        const p = { ...parent(), parentId: grandparent.id };
+        const p = { ...parent(), parentId: grandparent.id, editable: false };
         const child = task('child', { parentId: p.id });
         const savedChild = { ...child, dueDate: date(9), lockVersion: 3 };
         vi.mocked(apiClient.fetchData).mockResolvedValue(data([grandparent, p, savedChild]));

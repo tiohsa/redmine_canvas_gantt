@@ -42,6 +42,7 @@ interface DragState {
     clickedTaskId?: string | null;
     originalStartDate: number | undefined;
     originalDueDate: number | undefined;
+    anchorProjectId?: string;
     barOperationId: string | null;
     datePlacementMode: DatePlacementModeValue;
     cohort?: DragCohortMember[];
@@ -232,11 +233,26 @@ export class InteractionEngine {
         if (this.drag.mode === 'pan') return DEFAULT_CURSOR;
 
         if (!hit.task) return DEFAULT_CURSOR;
+        if (hit.region === 'body') {
+            const { tasks, selectedTaskIds } = useTaskStore.getState();
+            const selected = selectedTaskIds.length > 1 && selectedTaskIds.includes(hit.task.id)
+                ? tasks.filter(task => selectedTaskIds.includes(task.id)) : [hit.task];
+            const leaves = selected.filter(task => !task.hasChildren);
+            if (leaves.length > 0 && leaves.every(task => this.isMovableLeaf(task))) {
+                return hit.relation ? 'pointer' : TASK_MOVE_CURSOR;
+            }
+            return hit.task.hasChildren ? TASK_DISABLED_PARENT_CURSOR : DEFAULT_CURSOR;
+        }
         if (hit.task.hasChildren) return TASK_DISABLED_PARENT_CURSOR;
         if (!hit.task.editable) return DEFAULT_CURSOR;
         if (hit.region === 'start' || hit.region === 'end') return TASK_RESIZE_CURSOR;
         if (hit.relation) return 'pointer';
         return TASK_MOVE_CURSOR;
+    }
+
+    private isMovableLeaf(task: Task): boolean {
+        return !task.hasChildren && task.editable && !task.datesDerived &&
+            (Number.isFinite(task.startDate) || Number.isFinite(task.dueDate));
     }
 
     private hitTestRelation(x: number, y: number): Relation | null {
@@ -332,23 +348,14 @@ export class InteractionEngine {
                 useTaskStore.getState().selectTask(resolvedHit.task.id);
             }
 
-            if (!resolvedHit.task.editable) {
-                useUIStore.getState().addNotification(
-                    i18n.t('label_cannot_move_selected_tasks') || 'Cannot move the selection: some tasks are not editable or have no dates.',
-                    'warning'
-                );
-                return;
-            }
-
             if (resolvedHit.region === 'body') {
                 const selectedTaskIds = new Set(useTaskStore.getState().selectedTaskIds);
                 const selectedTasks = useTaskStore.getState().tasks.filter(t => selectedTaskIds.has(t.id));
-                const movableCohort = selectedTasks.filter(
-                    t => t.editable && !t.hasChildren && !t.datesDerived && (Number.isFinite(t.startDate) || Number.isFinite(t.dueDate))
-                );
+                const leaves = selectedTasks.filter(t => !t.hasChildren);
+                const movableCohort = leaves.filter(t => this.isMovableLeaf(t));
 
-                if (movableCohort.length !== selectedTasks.length || !movableCohort.some(t => t.id === resolvedHit.task!.id)) {
-                    if (resolvedHit.task.hasChildren || selectedTasks.some(t => t.hasChildren)) {
+                if (movableCohort.length !== leaves.length || movableCohort.length === 0) {
+                    if (leaves.length === 0 && resolvedHit.task.hasChildren) {
                         useUIStore.getState().addNotification(
                             i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.',
                             'warning'
@@ -362,7 +369,7 @@ export class InteractionEngine {
                     return;
                 }
 
-                const grabbedTask = movableCohort.find(t => t.id === resolvedHit.task!.id)!;
+                const grabbedTask = resolvedHit.task;
                 const cohortMembers: DragCohortMember[] = movableCohort.map(t => ({
                     id: t.id,
                     originalStartDate: t.startDate,
@@ -387,6 +394,7 @@ export class InteractionEngine {
                     clickedTaskId: resolvedHit.task.id,
                     originalStartDate: grabbedTask.startDate,
                     originalDueDate: grabbedTask.dueDate,
+                    anchorProjectId: grabbedTask.projectId,
                     barOperationId: operationId,
                     datePlacementMode: useUIStore.getState().datePlacementMode,
                     cohort: cohortMembers,
@@ -398,6 +406,13 @@ export class InteractionEngine {
                 if (resolvedHit.task.hasChildren) {
                     useUIStore.getState().addNotification(
                         i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.',
+                        'warning'
+                    );
+                    return;
+                }
+                if (!resolvedHit.task.editable) {
+                    useUIStore.getState().addNotification(
+                        i18n.t('label_cannot_move_selected_tasks') || 'Cannot move the selection: some tasks are not editable or have no dates.',
                         'warning'
                     );
                     return;
@@ -515,16 +530,15 @@ export class InteractionEngine {
                     projectId: useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId)?.projectId ?? ''
                 }];
 
-            const grabbed = cohort.find(member => member.id === this.drag.taskId)!;
-            const anchor = Number.isFinite(grabbed.originalStartDate)
-                ? grabbed.originalStartDate!
-                : grabbed.originalDueDate!;
+            const anchor = Number.isFinite(this.drag.originalStartDate)
+                ? this.drag.originalStartDate!
+                : this.drag.originalDueDate!;
             const workingDayDelta = datePlacementMode === DatePlacementMode.WorkingDays && calendarDayDelta !== 0
                 ? diffWorkingDays(anchor, normalizeWorkingDate(
                     addCalendarDays(anchor, calendarDayDelta),
                     calendarDayDelta > 0 ? 'forward' : 'backward',
-                    grabbed.projectId
-                ), grabbed.projectId)
+                    this.drag.anchorProjectId
+                ), this.drag.anchorProjectId)
                 : 0;
 
             const cohortTaskIds = new Set(cohort.map(m => m.id));
@@ -681,6 +695,9 @@ export class InteractionEngine {
         if (hit.task && this.isPointerWithinActualTaskBarBounds(hit.task, x, y)) {
             setContextMenu({ x: e.clientX, y: e.clientY, taskId: hit.task.id });
         } else {
+            if (useTaskStore.getState().selectedTaskIds.length > 1) {
+                useTaskStore.getState().selectTask(null);
+            }
             setContextMenu(null);
         }
     };
