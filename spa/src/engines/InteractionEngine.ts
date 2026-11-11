@@ -333,34 +333,36 @@ export class InteractionEngine {
             }
 
             if (!resolvedHit.task.editable) {
-                if (collapseSelectionOnMouseUp) {
-                    useTaskStore.getState().selectTask(resolvedHit.task.id);
-                }
+                useUIStore.getState().addNotification(
+                    i18n.t('label_cannot_move_selected_tasks') || 'Cannot move the selection: some tasks are not editable or have no dates.',
+                    'warning'
+                );
                 return;
             }
 
             if (resolvedHit.region === 'body') {
-                const selectedTaskIds = useTaskStore.getState().selectedTaskIds;
-                const allTasks = useTaskStore.getState().allTasks;
-                const selectedTasks = allTasks.filter(t => selectedTaskIds.includes(t.id));
+                const selectedTaskIds = new Set(useTaskStore.getState().selectedTaskIds);
+                const selectedTasks = useTaskStore.getState().tasks.filter(t => selectedTaskIds.has(t.id));
                 const movableCohort = selectedTasks.filter(
                     t => t.editable && !t.hasChildren && !t.datesDerived && (Number.isFinite(t.startDate) || Number.isFinite(t.dueDate))
                 );
 
-                if (movableCohort.length === 0) {
-                    if (collapseSelectionOnMouseUp) {
-                        useTaskStore.getState().selectTask(resolvedHit.task.id);
-                    }
-                    if (resolvedHit.task.hasChildren) {
+                if (movableCohort.length !== selectedTasks.length || !movableCohort.some(t => t.id === resolvedHit.task!.id)) {
+                    if (resolvedHit.task.hasChildren || selectedTasks.some(t => t.hasChildren)) {
                         useUIStore.getState().addNotification(
                             i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.',
+                            'warning'
+                        );
+                    } else {
+                        useUIStore.getState().addNotification(
+                            i18n.t('label_cannot_move_selected_tasks') || 'Cannot move the selection: some tasks are not editable or have no dates.',
                             'warning'
                         );
                     }
                     return;
                 }
 
-                const grabbedTask = movableCohort.find(t => t.id === resolvedHit.task!.id) ?? movableCohort[0];
+                const grabbedTask = movableCohort.find(t => t.id === resolvedHit.task!.id)!;
                 const cohortMembers: DragCohortMember[] = movableCohort.map(t => ({
                     id: t.id,
                     originalStartDate: t.startDate,
@@ -368,6 +370,12 @@ export class InteractionEngine {
                     projectId: t.projectId
                 }));
 
+                if (cohortMembers.length > 1) {
+                    useUIStore.getState().addNotification(
+                        i18n.t('label_moving_selected_tasks', { count: cohortMembers.length }) || `Moving ${cohortMembers.length} selected tasks.`,
+                        'info'
+                    );
+                }
                 useTaskStore.getState().setSortingSuspended(true);
                 const operationId = useTaskStore.getState().beginBarOperation(cohortMembers.map(m => m.id));
 
@@ -556,7 +564,7 @@ export class InteractionEngine {
                 }
             }
 
-            useTaskStore.getState().updateTasks(updates, cohortTaskIds);
+            useTaskStore.getState().updateTasks(updates, cohortTaskIds, this.drag.barOperationId);
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
             const datePlacementMode = this.drag.datePlacementMode;
@@ -574,7 +582,7 @@ export class InteractionEngine {
             // Only the pointer crossing the due date clears the start date, not calendar normalization.
             if (candidateStart > this.drag.originalDueDate!) {
                 if (Number.isFinite(currentTask?.startDate)) {
-                    updateTask(this.drag.taskId, { startDate: undefined }, undefined, datePlacementMode);
+                    updateTask(this.drag.taskId, { startDate: undefined }, undefined, datePlacementMode, this.drag.barOperationId);
                 }
                 return;
             }
@@ -583,7 +591,7 @@ export class InteractionEngine {
                 ? candidateStart
                 : normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
             if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
-                updateTask(this.drag.taskId, { startDate: newStart }, undefined, datePlacementMode);
+                updateTask(this.drag.taskId, { startDate: newStart }, undefined, datePlacementMode, this.drag.barOperationId);
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
@@ -602,7 +610,7 @@ export class InteractionEngine {
             // Only the pointer crossing the start date clears the due date, not calendar normalization.
             if (candidateEnd < this.drag.originalStartDate!) {
                 if (Number.isFinite(currentTask?.dueDate)) {
-                    updateTask(this.drag.taskId, { dueDate: undefined }, undefined, datePlacementMode);
+                    updateTask(this.drag.taskId, { dueDate: undefined }, undefined, datePlacementMode, this.drag.barOperationId);
                 }
                 return;
             }
@@ -611,7 +619,7 @@ export class InteractionEngine {
                 ? candidateEnd
                 : normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
             if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
-                updateTask(this.drag.taskId, { dueDate: newEnd }, undefined, datePlacementMode);
+                updateTask(this.drag.taskId, { dueDate: newEnd }, undefined, datePlacementMode, this.drag.barOperationId);
             }
         }
     };
@@ -645,7 +653,7 @@ export class InteractionEngine {
             if (collapseSelectionOnMouseUp && !hasMoved && clickedTaskId) {
                 selectTask(clickedTaskId);
             }
-            if (autoSave) {
+            if (autoSave && barOperationId && useTaskStore.getState().barOperations[barOperationId]) {
                 saveChanges().catch(console.error);
             }
         }

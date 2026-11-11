@@ -1646,6 +1646,29 @@ describe('InteractionEngine relation selection', () => {
 describe('InteractionEngine context menu hit testing', () => {
     const DAY_MS = 24 * 60 * 60 * 1000;
 
+    it('drops drag patches when returned to the original dates', () => {
+        setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const start = parseDateOnly('2026-07-06')!;
+        const due = parseDateOnly('2026-07-07')!;
+        const task = baseTask({ id: 'return', rowIndex: 0, startDate: start, dueDate: due });
+        useTaskStore.setState({ tasks: [task], allTasks: [task], selectedTaskIds: ['return'], selectedTaskId: 'return', autoSave: false, localTaskPatches: {}, modifiedTaskIds: new Set(), editGenerations: {} });
+        useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+        const bounds = LayoutEngine.getTaskBounds(task, useTaskStore.getState().viewport, 'hit', 2);
+        const x = bounds.x + bounds.width / 2;
+        const y = bounds.y + bounds.height / 2;
+        container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: x + 20, clientY: y, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        expect(useTaskStore.getState().allTasks.find(t => t.id === 'return')?.startDate).toBe(start);
+        expect(useTaskStore.getState().localTaskPatches.return).toBeUndefined();
+        expect(useTaskStore.getState().modifiedTaskIds.has('return')).toBe(false);
+        engine.detach();
+        container.remove();
+    });
+
     it('uses the task under the pointer instead of the hovered task', () => {
         setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
@@ -1716,6 +1739,29 @@ describe('InteractionEngine context menu hit testing', () => {
 describe('InteractionEngine multi-task drag and drop', () => {
     const DAY_MS = 24 * 60 * 60 * 1000;
 
+    it('does not move a selected task omitted from visible rows', () => {
+        setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const start = parseDateOnly('2026-07-06')!;
+        const due = parseDateOnly('2026-07-07')!;
+        const visible = baseTask({ id: 'visible', rowIndex: 0, startDate: start, dueDate: due });
+        const hidden = baseTask({ id: 'hidden', rowIndex: 1, startDate: start, dueDate: due });
+        useTaskStore.setState({ tasks: [visible], allTasks: [visible, hidden], selectedTaskIds: ['visible', 'hidden'], selectedTaskId: 'visible', autoSave: false });
+        useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+        const bounds = LayoutEngine.getTaskBounds(visible, useTaskStore.getState().viewport, 'hit', 2);
+        const x = bounds.x + bounds.width / 2;
+        const y = bounds.y + bounds.height / 2;
+        container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: x + 20, clientY: y, bubbles: true }));
+        expect(useTaskStore.getState().allTasks.find(t => t.id === 'visible')?.startDate).toBe(start + 2 * DAY_MS);
+        expect(useTaskStore.getState().allTasks.find(t => t.id === 'hidden')?.startDate).toBe(start);
+        expect(useTaskStore.getState().localTaskPatches.hidden).toBeUndefined();
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
+
     it('moves multiple selected tasks together by calendar delta', async () => {
         setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
@@ -1768,7 +1814,7 @@ describe('InteractionEngine multi-task drag and drop', () => {
         container.remove();
     });
 
-    it('skips parent task with children and moves only leaf tasks when parent is in selection', async () => {
+    it('rejects the whole selection when it contains a parent', async () => {
         setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
         const engine = new InteractionEngine(container);
@@ -1804,7 +1850,7 @@ describe('InteractionEngine multi-task drag and drop', () => {
         }));
 
         const afterChild = useTaskStore.getState().tasks.find(t => t.id === 'child');
-        expect(formatDateOnly(afterChild?.startDate)).toBe('2026-07-07');
+        expect(formatDateOnly(afterChild?.startDate)).toBe('2026-07-06');
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();
@@ -2137,7 +2183,7 @@ describe('InteractionEngine multi-task drag and drop', () => {
         }
     });
 
-    it('Grabbing parent task bar moves child task when both selected, warning notification when only parent selected', async () => {
+    it('never moves a child when grabbing a selected parent', async () => {
         setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
         const engine = new InteractionEngine(container);
@@ -2190,8 +2236,8 @@ describe('InteractionEngine multi-task drag and drop', () => {
         }));
 
         const movedChild = useTaskStore.getState().tasks.find(t => t.id === 'child');
-        expect(formatDateOnly(movedChild?.startDate)).toBe('2026-07-07');
-        expect(formatDateOnly(movedChild?.dueDate)).toBe('2026-07-08');
+        expect(formatDateOnly(movedChild?.startDate)).toBe('2026-07-06');
+        expect(formatDateOnly(movedChild?.dueDate)).toBe('2026-07-07');
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 
@@ -2231,7 +2277,7 @@ describe('InteractionEngine multi-task drag and drop', () => {
         container.remove();
     });
 
-    it('Dateless task excluded from cohort, start-only task keeps dueDate undefined', async () => {
+    it('rejects the entire selection when one task has no dates', async () => {
         setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
         const engine = new InteractionEngine(container);
@@ -2291,16 +2337,16 @@ describe('InteractionEngine multi-task drag and drop', () => {
         const afterDateless = useTaskStore.getState().tasks.find(t => t.id === 'task-dateless');
         const afterStartOnly = useTaskStore.getState().tasks.find(t => t.id === 'task-start-only');
 
-        // task-1 shifted by 2 days
-        expect(formatDateOnly(after1?.startDate)).toBe('2026-07-08');
-        expect(formatDateOnly(after1?.dueDate)).toBe('2026-07-09');
+        // No selected task moves when the selection contains a dateless task.
+        expect(formatDateOnly(after1?.startDate)).toBe('2026-07-06');
+        expect(formatDateOnly(after1?.dueDate)).toBe('2026-07-07');
 
         // datelessTask excluded from cohort, remains undefined
         expect(afterDateless?.startDate).toBeUndefined();
         expect(afterDateless?.dueDate).toBeUndefined();
 
         // startOnlyTask shifted startDate by 2 days, and dueDate remains undefined (not populated with undefined or NaN)
-        expect(formatDateOnly(afterStartOnly?.startDate)).toBe('2026-07-08');
+        expect(formatDateOnly(afterStartOnly?.startDate)).toBe('2026-07-06');
         expect(afterStartOnly?.dueDate).toBeUndefined();
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));

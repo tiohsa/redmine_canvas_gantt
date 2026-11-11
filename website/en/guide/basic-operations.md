@@ -28,6 +28,10 @@ With **Snap to working days** selected under **Manual scheduling**, non-working 
 
 <video controls preload="metadata" playsinline poster="/images/schedule-edit-poster.png" src="/videos/schedule-edit.mp4" style="width:100%;height:auto" aria-label="moving and resizing a task bar to change its dates"></video>
 
+::: warning Development version
+The following group-drag behavior is under development and is not part of the documented 0.19.0 release. Select multiple issue rows with Ctrl / Cmd or Shift, then drag a selected bar. Only selected rows currently visible in the chart are included. The move is stopped if a selected visible issue is not editable, has derived dates, is a parent, or has no dates. Select child issues instead of dragging a parent. With automatic scheduling enabled, a move that introduces or worsens a dependency violation may be rejected. If a grouped schedule save fails, unconfirmed changes belonging to that drag are rolled back; separate issue edits are not part of the same transaction.
+:::
+
 ## Edit a cell
 
 1. Show the column you want from the column menu.

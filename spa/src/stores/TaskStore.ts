@@ -43,7 +43,7 @@ import {
 import type { QueryContext, QueryOverrides } from '../query/types';
 import { resolvedStateToQueryContext } from '../query/queryStateCodec';
 import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
-import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
+import { buildSchedulingEdges, detectSchedulingCycleTaskIds, addWorkingDays, type SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode, DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
@@ -338,7 +338,7 @@ export interface TaskState {
     clearRelationSelection: () => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
-    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>, datePlacementMode?: DatePlacementModeValue) => void;
+    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>, datePlacementMode?: DatePlacementModeValue, barOperationId?: string | null) => void;
     updateTasks: (
         taskUpdates: Array<{
             id: string;
@@ -346,7 +346,8 @@ export interface TaskState {
             mutationIntent?: Partial<Task>;
             datePlacementMode?: DatePlacementModeValue;
         }>,
-        cohortTaskIds?: Set<string>
+        cohortTaskIds?: Set<string>,
+        barOperationId?: string | null
     ) => void;
     beginBarOperation: (seedTaskId?: string | string[]) => string;
     endBarOperation: (operationId: string) => void;
@@ -1254,6 +1255,16 @@ const taskFieldsAffectLayout = (
 };
 
 export const useTaskStore = create<TaskState>((set, get) => {
+    const dragNotifications = new Map<string, Set<string>>();
+    const notifyDragError = (message: string, operationId?: string | null) => {
+        if (operationId) {
+            const shown = dragNotifications.get(operationId) ?? new Set<string>();
+            if (shown.has(message)) return;
+            shown.add(message);
+            dragNotifications.set(operationId, shown);
+        }
+        useUIStore.getState().addNotification(message, 'error');
+    };
     const inflightReads = new Map<string, Promise<ReadApplyOutcome>>();
     const mutationResyncDataGuards = new WeakMap<object, () => boolean>();
     const canApplyMutationResyncData = (data: ApiData) => mutationResyncDataGuards.get(data)?.() ?? true;
@@ -2186,13 +2197,31 @@ export const useTaskStore = create<TaskState>((set, get) => {
     },
 
     endBarOperation: (operationId) => set((state) => {
+        dragNotifications.delete(operationId);
         const transition = endBarOperationState(
             state.barOperations,
             state.activeBarOperationId,
             state.allTasks,
             state.editGenerations,
-            operationId
+            operationId,
+            state.localTaskPatches
         );
+        const operation = transition.barOperations[operationId];
+        if (operation && operation.baselineAllTasks.some(baseline =>
+            (state.localTaskPatches[baseline.id] ?? []).some(patch => patch.barOperationId === operationId)
+        ) && operation.baselineAllTasks.every(baseline => {
+            const current = state.allTasks.find(task => task.id === baseline.id);
+            const owned = (state.localTaskPatches[baseline.id] ?? []).filter(patch => patch.barOperationId === operationId);
+            return current && owned.every(patch => Object.keys(patch.projection).every(field => (
+                Object.is(current[field as keyof Task], baseline[field as keyof Task])
+            )));
+        })) {
+            const rollback = buildBarOperationRollback({ ...state, ...transition }, operationId);
+            if (rollback) {
+                const derived = buildDerivedTaskState(state, { allTasks: rollback.allTasks });
+                return { ...rollback, ...toDerivedTaskStatePatch(derived) };
+            }
+        }
         return transition.barOperations === state.barOperations && transition.activeBarOperationId === state.activeBarOperationId
             ? state
             : transition;
@@ -2254,7 +2283,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
-    updateTasks: (taskUpdates, cohortTaskIds) => set((state) => {
+    updateTasks: (taskUpdates, cohortTaskIds, barOperationId) => set((state) => {
         if (!taskUpdates || taskUpdates.length === 0) return state;
 
         invalidateDataRequests();
@@ -2270,9 +2299,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
 
         const preparedUpdates: PreparedUpdate[] = [];
+        const taskById = new Map(state.allTasks.map(task => [task.id, task]));
 
         for (const item of taskUpdates) {
-            const task = state.allTasks.find(t => t.id === item.id);
+            const task = taskById.get(item.id);
             if (!task) continue;
 
             if (!TaskLogicService.canEditTask(task)) {
@@ -2315,7 +2345,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
         }
 
-        if (preparedUpdates.length === 0) return state;
+        if (preparedUpdates.length === 0 || (cohortTaskIds &&
+            (preparedUpdates.length !== cohortTaskIds.size || preparedUpdates.some(p => !cohortTaskIds.has(p.task.id))))) return state;
+        if (barOperationId && cohortTaskIds && preparedUpdates.every(({ task, canonicalUpdates }) =>
+            Object.entries(canonicalUpdates).every(([field, value]) => Object.is(task[field as keyof Task], value))
+        )) return state;
 
         const updatedTaskById = new Map<string, Task>(preparedUpdates.map(p => [p.task.id, p.updatedTask]));
         let currentTasks = state.allTasks.map(t => updatedTaskById.get(t.id) ?? t);
@@ -2324,7 +2358,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         for (const prepared of preparedUpdates) {
             const isContextChange = hasOwnField(prepared.canonicalUpdates, 'projectId') || hasOwnField(prepared.canonicalUpdates, 'trackerId');
-            if (!isContextChange && (hasOwnField(prepared.canonicalUpdates, 'startDate') || hasOwnField(prepared.canonicalUpdates, 'dueDate'))) {
+            if (effectiveRelations.length > 0 && !isContextChange && (hasOwnField(prepared.canonicalUpdates, 'startDate') || hasOwnField(prepared.canonicalUpdates, 'dueDate'))) {
                 const tasksForDependencyCheck = state.allTasks.map(t => {
                     if (t.id === prepared.task.id) return prepared.task;
                     const updated = updatedTaskById.get(t.id);
@@ -2344,7 +2378,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     cohortSet
                 );
                 if (depResult.error) {
-                    useUIStore.getState().addNotification(depResult.error, 'error');
+                    notifyDragError(depResult.error, barOperationId);
                     return state;
                 }
                 depResult.updates.forEach((v, k) => {
@@ -2387,7 +2421,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         ) || pendingUpdates.size > 0;
 
         const anyParentDatesDerived = preparedUpdates.some(p => {
-            return state.allTasks.find(candidate => candidate.id === p.task.parentId)?.datesDerived;
+            return p.task.parentId ? taskById.get(p.task.parentId)?.datesDerived : false;
         });
 
         if (!anyContextChange && (hasScheduleSeed || !anyParentDatesDerived)) {
@@ -2399,11 +2433,40 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 cohortSet
             );
             if (cascadingUpdates.error) {
-                useUIStore.getState().addNotification(cascadingUpdates.error, 'error');
+                notifyDragError(cascadingUpdates.error, barOperationId);
                 return state;
             }
             currentTasks = cascadingUpdates.tasks;
             cascadingUpdates.updates.forEach((patch, taskId) => pendingUpdates.set(taskId, patch));
+        }
+
+        // A cohort is excluded from cascade updates to prevent double movement. Check
+        // every final edge separately, including edges between selected tasks.
+        if (cohortTaskIds && cohortTaskIds.size > 1 && autoScheduleMoveMode !== AutoScheduleMoveMode.Off) {
+            const edges = buildSchedulingEdges(effectiveRelations);
+            const cycleTaskIds = detectSchedulingCycleTaskIds(edges);
+            if ([...cohortTaskIds].some(id => cycleTaskIds.has(id))) {
+                notifyDragError(i18n.t('label_scheduling_state_cyclic') || 'This task participates in a dependency cycle.', barOperationId);
+                return state;
+            }
+            const candidateById = new Map(currentTasks.map(task => [task.id, task]));
+            const violation = (predecessor: Task | undefined, successor: Task | undefined, gapDays: number): number => {
+                if (!predecessor || !successor || !Number.isFinite(predecessor.startDate) || !Number.isFinite(predecessor.dueDate) ||
+                    !Number.isFinite(successor.startDate) || !Number.isFinite(successor.dueDate) ||
+                    predecessor.startDate! > predecessor.dueDate! || successor.startDate! > successor.dueDate!) return 0;
+                return Math.max(0, addWorkingDays(predecessor.dueDate!, gapDays, successor.projectId) - successor.startDate!);
+            };
+            const worsened = edges.some(edge => {
+                const before = violation(taskById.get(edge.predecessorId), taskById.get(edge.successorId), edge.gapDays);
+                const after = violation(candidateById.get(edge.predecessorId), candidateById.get(edge.successorId), edge.gapDays);
+                return after > before;
+            });
+            if (worsened) {
+                notifyDragError(
+                    i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.', barOperationId
+                );
+                return state;
+            }
         }
 
         const changedTaskIds = new Set([...preparedUpdates.map(p => p.task.id), ...pendingUpdates.keys()]);
@@ -2429,7 +2492,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             state.barOperations,
             state.allTasks,
             state.editGenerations,
-            state.activeBarOperationId,
+            barOperationId === state.activeBarOperationId ? barOperationId : null,
             changedTaskIds
         );
 
@@ -2464,6 +2527,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     mutationIntent: persistenceIntent,
                     generation,
                     operationId,
+                    ...(barOperationId && barOperationId === state.activeBarOperationId ? { barOperationId } : {}),
                     ...(hasDateMutation && mutationDatePlacementMode
                         ? { mutationContext: { datePlacementMode: mutationDatePlacementMode } }
                         : {})
@@ -2477,7 +2541,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         }
 
         pendingUpdates.forEach((fields, taskId) => {
-            const affectedTask = state.allTasks.find(candidate => candidate.id === taskId);
+            const affectedTask = taskById.get(taskId);
             const mutationIntent = affectedTask?.datesDerived
                 ? Object.fromEntries(Object.entries(fields).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
                 : fields;
@@ -2556,8 +2620,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
-    updateTask: (id, updates, mutationIntent = updates, datePlacementMode) => {
-        get().updateTasks([{ id, updates, mutationIntent, datePlacementMode }]);
+    updateTask: (id, updates, mutationIntent = updates, datePlacementMode, barOperationId) => {
+        get().updateTasks([{ id, updates, mutationIntent, datePlacementMode }], undefined, barOperationId);
     },
 
     setTaskLockVersion: (id, lockVersion) => set((state) => {
