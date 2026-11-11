@@ -13,6 +13,7 @@ import { parseDateOnly } from '../utils/dateOnly';
 
 describe('UiSidebar', () => {
     const initialUpdateViewport = useTaskStore.getState().updateViewport;
+    const initialScrollToTask = useTaskStore.getState().scrollToTask;
 
     const createMockDataTransfer = (): DataTransfer => {
         const values = new Map<string, string>();
@@ -86,7 +87,10 @@ describe('UiSidebar', () => {
     });
 
     afterEach(() => {
-        useTaskStore.setState({ updateViewport: initialUpdateViewport });
+        useTaskStore.setState({
+            updateViewport: initialUpdateViewport,
+            scrollToTask: initialScrollToTask
+        });
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
@@ -1476,6 +1480,86 @@ describe('UiSidebar', () => {
         });
         expect(useUIStore.getState().issueDialogUrl).toBeNull();
         expect(screen.getByTestId('task-row-322')).toHaveClass('is-selected');
+    });
+
+    it('supports ctrl-click and shift-click multi-selection in sidebar', async () => {
+        const t1: Task = { id: '101', subject: 'Task 1', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false };
+        const t2: Task = { id: '102', subject: 'Task 2', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 1, hasChildren: false };
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            selectedTaskIds: []
+        });
+        useTaskStore.getState().setTasks([t1, t2]);
+
+        render(<UiSidebar />);
+
+        fireEvent.click(screen.getByTestId('task-row-101'));
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['101']);
+
+        fireEvent.click(screen.getByTestId('task-row-102'), { ctrlKey: true });
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['101', '102']);
+        expect(screen.getByTestId('task-row-101')).toHaveClass('is-selected');
+        expect(screen.getByTestId('task-row-102')).toHaveClass('is-selected');
+    });
+
+    it('Shift+click range selection selects tasks without calling scrollToTask, while single click calls scrollToTask', async () => {
+        const scrollToTaskSpy = vi.fn();
+        useTaskStore.setState({ scrollToTask: scrollToTaskSpy });
+
+        const t1: Task = { id: '101', subject: 'Task 1', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false };
+        const t2: Task = { id: '102', subject: 'Task 2', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 1, hasChildren: false };
+        const t3: Task = { id: '103', subject: 'Task 3', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 2, hasChildren: false };
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            selectedTaskIds: []
+        });
+        useTaskStore.getState().setTasks([t1, t2, t3]);
+
+        render(<UiSidebar />);
+
+        // Single click on row 101 triggers selectTask and scrollToTask
+        fireEvent.click(screen.getByTestId('task-row-101'));
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['101']);
+        });
+        expect(scrollToTaskSpy).toHaveBeenCalledTimes(1);
+        expect(scrollToTaskSpy).toHaveBeenCalledWith('101');
+
+        scrollToTaskSpy.mockClear();
+
+        // Shift+click on row 103 selects range without triggering scrollToTask
+        fireEvent.click(screen.getByTestId('task-row-103'), { shiftKey: true });
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['101', '102', '103']);
+        });
+        expect(scrollToTaskSpy).not.toHaveBeenCalled();
+
+        // Ctrl+click on row 102 toggles selection without triggering scrollToTask
+        fireEvent.click(screen.getByTestId('task-row-102'), { ctrlKey: true });
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedTaskIds).toEqual(['101', '103']);
+        });
+        expect(scrollToTaskSpy).not.toHaveBeenCalled();
     });
 
     it('renders notification column for unscheduled tasks when enabled in visibleColumns', () => {

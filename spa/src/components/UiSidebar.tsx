@@ -147,8 +147,11 @@ export const UiSidebar: React.FC = () => {
     const viewport = useTaskStore(state => state.viewport);
     const updateViewport = useTaskStore(state => state.updateViewport);
     const selectTask = useTaskStore(state => state.selectTask);
+    const toggleSelectTask = useTaskStore(state => state.toggleSelectTask);
+    const selectTaskRange = useTaskStore(state => state.selectTaskRange);
     const scrollToTask = useTaskStore(state => state.scrollToTask);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
+    const selectedTaskIds = useTaskStore(state => state.selectedTaskIds);
     const projectExpansion = useTaskStore(state => state.projectExpansion);
     const taskExpansion = useTaskStore(state => state.taskExpansion);
     const customFields = useTaskStore(state => state.customFields);
@@ -270,6 +273,10 @@ export const UiSidebar: React.FC = () => {
     const closedStatusIds = React.useMemo(
         () => new Set(taskStatuses.filter(status => status.isClosed).map(status => status.id)),
         [taskStatuses]
+    );
+    const selectedTaskIdSet = React.useMemo(
+        () => new Set(selectedTaskIds),
+        [selectedTaskIds]
     );
     const isTaskClosed = React.useCallback((task: Task) => closedStatusIds.has(task.statusId), [closedStatusIds]);
 
@@ -446,7 +453,7 @@ export const UiSidebar: React.FC = () => {
                     className="task-subject-cell"
                 >
                     {(() => {
-                        const isSelected = t.id === selectedTaskId;
+                        const isSelected = selectedTaskIdSet.has(t.id) || t.id === selectedTaskId;
                         const isClosed = isTaskClosed(t);
                         const hasParentGuide = (t.treeLevelGuides ?? []).length > 0;
                         const level = (t.treeLevelGuides ?? []).length;
@@ -1097,7 +1104,7 @@ export const UiSidebar: React.FC = () => {
                         if (row.type !== 'task') return null;
                         const task = taskMap.get(row.taskId);
                         if (!task) return null;
-                        const isSelected = task.id === selectedTaskId;
+                        const isSelected = selectedTaskIdSet.has(task.id) || task.id === selectedTaskId;
                         const isDropTarget = dropTargetTaskId === task.id;
                         const isClosed = isTaskClosed(task);
                         const meta = editMetaByTaskId[task.id];
@@ -1111,12 +1118,18 @@ export const UiSidebar: React.FC = () => {
                                 onDragOver={(e) => handleTaskDragOver(task.id, e)}
                                 onDrop={(e) => { void handleTaskDrop(task.id, e); }}
                                 onDragEnd={resetDragState}
-                                onClick={() => {
+                                onClick={(e) => {
                                     if (activeInlineEdit && activeInlineEdit.taskId !== task.id) {
                                         setActiveInlineEdit(null);
                                     }
-                                    selectTask(task.id);
-                                    scrollToTask(task.id);
+                                    if (e.ctrlKey || e.metaKey) {
+                                        toggleSelectTask(task.id);
+                                    } else if (e.shiftKey) {
+                                        selectTaskRange(task.id);
+                                    } else {
+                                        selectTask(task.id);
+                                        scrollToTask(task.id);
+                                    }
                                 }}
                                 style={{
                                     position: 'absolute',

@@ -266,7 +266,8 @@ export const deriveSchedulingStates = (tasks: Task[], relations: Relation[]): Re
 export const recalculateDownstreamTasks = (
     tasks: Task[],
     relations: Relation[],
-    originTaskId: string
+    originTaskId: string,
+    ignoredTaskIds?: Set<string>
 ): Map<string, Partial<Task>> => {
     const taskById = new Map(tasks.map((task) => [task.id, { ...task }]));
     const outgoing = new Map<string, SchedulingEdge[]>();
@@ -293,6 +294,7 @@ export const recalculateDownstreamTasks = (
         (outgoing.get(predecessorId) ?? []).forEach((edge) => {
             const successor = taskById.get(edge.successorId);
             if (!successor || successor.datesDerived || !hasValidDateRange(successor)) return;
+            if (ignoredTaskIds?.has(successor.id)) return;
             const successorStartDate = successor.startDate!;
             const successorDueDate = successor.dueDate!;
             const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, successor.projectId);
@@ -332,7 +334,8 @@ export const calculateLinkedDownstreamUpdates = (
     relations: Relation[],
     originTaskId: string,
     previousDueDate: number | undefined,
-    nextDueDate: number | undefined
+    nextDueDate: number | undefined,
+    ignoredTaskIds?: Set<string>
 ): { updates: Map<string, Partial<Task>>; error?: string } => {
     if (!hasFiniteDate(previousDueDate) || !hasFiniteDate(nextDueDate)) {
         return { updates: new Map() };
@@ -366,6 +369,7 @@ export const calculateLinkedDownstreamUpdates = (
         (outgoing.get(predecessorId) ?? []).forEach((edge) => {
             const successor = taskById.get(edge.successorId);
             if (!successor || successor.datesDerived || !hasValidDateRange(successor) || clusterTaskIds.has(successor.id)) return;
+            if (ignoredTaskIds?.has(successor.id)) return;
 
             clusterTaskIds.add(successor.id);
             queue.push(successor.id);

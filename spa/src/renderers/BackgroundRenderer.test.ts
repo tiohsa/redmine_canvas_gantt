@@ -137,4 +137,30 @@ describe('BackgroundRenderer business calendar shading', () => {
 
         expect(fillRect).toHaveBeenCalledWith(0, 20, 10, 20);
     });
+
+    it('draws row highlights for all visible selected tasks when selectedTaskIds contains multiple tasks', () => {
+        const tasks = [
+            buildTask('task-1', '1', 0),
+            buildTask('task-2', '1', 1),
+            buildTask('task-3', '1', 2),
+            buildTask('task-offscreen', '1', 100)
+        ];
+
+        new BackgroundRenderer(canvas).render(viewport, 2, null, tasks, ['task-1', 'task-3', 'task-offscreen']);
+
+        const selectionHighlights = fillRectsWithColors.filter(
+            entry => entry.color === designTokens.selectedRow
+        );
+
+        // 'task-1' at y=0, 'task-3' at y=40; 'task-offscreen' is not in visibleTasks (y=2000 >= height 100)
+        expect(selectionHighlights).toHaveLength(2);
+        expect(selectionHighlights).toContainEqual({
+            color: designTokens.selectedRow,
+            args: [0, 0, 100, 20]
+        });
+        expect(selectionHighlights).toContainEqual({
+            color: designTokens.selectedRow,
+            args: [0, 40, 100, 20]
+        });
+    });
 });

@@ -38,6 +38,17 @@ describe('bar operation lifecycle', () => {
         expect(captured['bar:1'].baselineAllTasks[0]).not.toBe(first);
     });
 
+    it('captures multiple seed task baselines on initialization', () => {
+        const first = task('1', 'first');
+        const second = task('2', 'second');
+        const started = beginBarOperation({}, [first, second], { '1': 3, '2': 5 }, 'bar:multi', ['1', '2']);
+
+        expect(started.barOperations['bar:multi']).toMatchObject({
+            baselineAllTasks: [first, second],
+            baselineGenerations: { '1': 3, '2': 5 }
+        });
+    });
+
     it('records only generations changed after the baseline', () => {
         const first = task('1', 'first');
         const second = task('2', 'second');

@@ -7476,3 +7476,276 @@ describe('TaskStore relation draft persistence', () => {
         create.mockRestore();
     });
 });
+
+describe('TaskStore multi-task selection and batch updates', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('manages single and multi selection state', () => {
+        const { selectTask, toggleSelectTask, clearSelection, setSelectedTasks } = useTaskStore.getState();
+
+        selectTask('t1');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t1');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1']);
+
+        toggleSelectTask('t2');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2']);
+
+        toggleSelectTask('t1');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2']);
+
+        toggleSelectTask('t2');
+        expect(useTaskStore.getState().selectedTaskId).toBeNull();
+        expect(useTaskStore.getState().selectedTaskIds).toEqual([]);
+
+        setSelectedTasks(['a', 'b', 'c']);
+        expect(useTaskStore.getState().selectedTaskId).toBe('c');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['a', 'b', 'c']);
+
+        clearSelection();
+        expect(useTaskStore.getState().selectedTaskId).toBeNull();
+        expect(useTaskStore.getState().selectedTaskIds).toEqual([]);
+    });
+
+    it('selects task range based on layout tasks order', () => {
+        const t1 = buildTask({ id: 't1', rowIndex: 0 });
+        const t2 = buildTask({ id: 't2', rowIndex: 1 });
+        const t3 = buildTask({ id: 't3', rowIndex: 2 });
+        const t4 = buildTask({ id: 't4', rowIndex: 3 });
+        useTaskStore.setState({ tasks: [t1, t2, t3, t4], allTasks: [t1, t2, t3, t4] });
+
+        useTaskStore.getState().selectTask('t1');
+        useTaskStore.getState().selectTaskRange('t3');
+
+        expect(useTaskStore.getState().selectedTaskId).toBe('t3');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2', 't3']);
+    });
+
+    it('updates multiple tasks atomically with updateTasks', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.setState({ tasks: [t1, t2], allTasks: [t1, t2] });
+
+        useTaskStore.getState().updateTasks([
+            { id: 't1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 't2', updates: { startDate: THURSDAY, dueDate: FRIDAY } }
+        ]);
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(THURSDAY);
+        expect(state.modifiedTaskIds.has('t1')).toBe(true);
+        expect(state.modifiedTaskIds.has('t2')).toBe(true);
+    });
+
+    it('suppresses auto-scheduling cascade between tasks within cohortTaskIds', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: TUESDAY, dueDate: WEDNESDAY });
+        const t3 = buildTask({ id: 't3', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const relations = [
+            { id: 'r1', from: 't1', to: 't2', type: 'precedes' as const },
+            { id: 'r2', from: 't2', to: 't3', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [t1, t2, t3],
+            allTasks: [t1, t2, t3],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+
+        // Moving t1 and t2 together (cohort); t3 is downstream outside cohort
+        useTaskStore.getState().updateTasks([
+            { id: 't1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 't2', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } }
+        ], new Set(['t1', 't2']));
+
+        const state = useTaskStore.getState();
+        // t1 and t2 are at their explicitly moved dates, NOT double-shifted
+        expect(state.allTasks.find(t => t.id === 't1')?.dueDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.dueDate).toBe(THURSDAY);
+        // t3 is outside cohort and got pushed by t2 (t2 dueDate is Thursday, so t3 starts Friday)
+        expect(state.allTasks.find(t => t.id === 't3')?.startDate).toBe(FRIDAY);
+    });
+
+    it('synchronizes selectedTaskIds and selectionAnchorId when focusing a task', () => {
+        const { setTasks, setSelectedTasks, focusTask } = useTaskStore.getState();
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY, rowIndex: 0 });
+        const t2 = buildTask({ id: 't2', startDate: WEDNESDAY, dueDate: THURSDAY, rowIndex: 1 });
+        setTasks([t1, t2]);
+        setSelectedTasks(['t1', 't2']);
+
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2']);
+
+        const result = focusTask('t2');
+        expect(result).toEqual({ status: 'ok' });
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+    });
+
+    it('shrinks and updates range on repeated Shift+click while preserving anchor', () => {
+        const t1 = buildTask({ id: 't1', rowIndex: 0 });
+        const t2 = buildTask({ id: 't2', rowIndex: 1 });
+        const t3 = buildTask({ id: 't3', rowIndex: 2 });
+        const t4 = buildTask({ id: 't4', rowIndex: 3 });
+        const t5 = buildTask({ id: 't5', rowIndex: 4 });
+        useTaskStore.setState({ tasks: [t1, t2, t3, t4, t5], allTasks: [t1, t2, t3, t4, t5] });
+
+        // 1. Initial selection at t2
+        useTaskStore.getState().selectTask('t2');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+
+        // 2. Expand range to t5 (Shift+click t5)
+        useTaskStore.getState().selectTaskRange('t5');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t5');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2', 't3', 't4', 't5']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+
+        // 3. Shrink range to t3 (Shift+click t3) - anchor t2 must be preserved and t4, t5 removed
+        useTaskStore.getState().selectTaskRange('t3');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t3');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2', 't3']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+
+        // 4. Reverse range to t1 (Shift+click t1) - anchor t2 preserved, selecting t1..t2
+        useTaskStore.getState().selectTaskRange('t1');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t1');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+    });
+
+    it('rolls back all modified tasks from a multi-task barOperation', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: TUESDAY, dueDate: WEDNESDAY });
+        const t3 = buildTask({ id: 't3', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const relations = [
+            { id: 'r1', from: 't2', to: 't3', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [t1, t2, t3],
+            allTasks: [t1, t2, t3],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+
+        const operationId = useTaskStore.getState().beginBarOperation(['t1', 't2']);
+        useTaskStore.getState().updateTasks([
+            { id: 't1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 't2', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } }
+        ], new Set(['t1', 't2']));
+
+        let state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't3')?.startDate).toBe(FRIDAY);
+        expect(state.modifiedTaskIds.has('t1')).toBe(true);
+        expect(state.modifiedTaskIds.has('t2')).toBe(true);
+        expect(state.modifiedTaskIds.has('t3')).toBe(true);
+
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().rollbackBarOperation(operationId);
+
+        state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(MONDAY);
+        expect(state.allTasks.find(t => t.id === 't1')?.dueDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.dueDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't3')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't3')?.dueDate).toBe(THURSDAY);
+        expect(state.modifiedTaskIds.has('t1')).toBe(false);
+        expect(state.modifiedTaskIds.has('t2')).toBe(false);
+        expect(state.modifiedTaskIds.has('t3')).toBe(false);
+    });
+
+    it('handles multiple predecessors in LinkedDownstreamShift for forward and backward shifts', () => {
+        // Forward shift:
+        // p1 (Mon-Tue) and p2 (Mon-Wed) both precede successor (Thu-Fri).
+        // Shift p1 to Tue-Wed, and p2 to Wed-Fri.
+        // successor should be pushed based on p2 (the larger shift), not overridden by p1.
+        const p1 = buildTask({ id: 'p1', startDate: MONDAY, dueDate: TUESDAY });
+        const p2 = buildTask({ id: 'p2', startDate: MONDAY, dueDate: WEDNESDAY });
+        const succ = buildTask({ id: 'succ', startDate: THURSDAY, dueDate: FRIDAY });
+        const relations = [
+            { id: 'r1', from: 'p1', to: 'succ', type: 'precedes' as const },
+            { id: 'r2', from: 'p2', to: 'succ', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [p1, p2, succ],
+            allTasks: [p1, p2, succ],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+
+        useTaskStore.getState().updateTasks([
+            { id: 'p1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 'p2', updates: { startDate: WEDNESDAY, dueDate: FRIDAY } }
+        ], new Set(['p1', 'p2']));
+
+        let state = useTaskStore.getState();
+        const succTask = state.allTasks.find(t => t.id === 'succ');
+        // p2 dueDate shifted +2 days (Wed -> Fri). In LinkedDownstreamShift, succ shifts by +2 days (Thu -> Sat: THURSDAY + 2 * DAY)
+        // Math.max prevents p1's smaller +1 day shift from overwriting p2's +2 day shift
+        expect(succTask?.startDate).toBe(THURSDAY + 2 * DAY);
+
+        // Backward shift:
+        // Initially: p1 (Wed-Wed) and p2 (Wed-Thu) both precede succ (Fri-Fri).
+        // p2 dueDate (Thu) was the constraining predecessor holding succ at Friday.
+        // Both p1 and p2 shift backward by 1 day: p1 to Tue-Tue, p2 to Tue-Wed.
+        // tasksForDependencyCheck passes p2's updated earlier dueDate (Wed) so p1 does not falsely
+        // trigger label_auto_schedule_external_conflict against p2's original Thursday dueDate.
+        // successor shifts backward cleanly to start on Thursday without constraint errors.
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        const p1Back = buildTask({ id: 'p1', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+        const p2Back = buildTask({ id: 'p2', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const succBack = buildTask({ id: 'succ', startDate: FRIDAY, dueDate: FRIDAY });
+        useTaskStore.setState({
+            tasks: [p1Back, p2Back, succBack],
+            allTasks: [p1Back, p2Back, succBack],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+
+        useTaskStore.getState().updateTasks([
+            { id: 'p1', updates: { startDate: TUESDAY, dueDate: TUESDAY } },
+            { id: 'p2', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } }
+        ], new Set(['p1', 'p2']));
+
+        state = useTaskStore.getState();
+        const succBackUpdated = state.allTasks.find(t => t.id === 'succ');
+        expect(succBackUpdated?.startDate).toBe(THURSDAY);
+    });
+
+    it('safely handles circular dependencies within the moving cohort without errors', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: TUESDAY, dueDate: WEDNESDAY });
+        const relations = [
+            { id: 'r1', from: 't1', to: 't2', type: 'precedes' as const },
+            { id: 'r2', from: 't2', to: 't1', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [t1, t2],
+            allTasks: [t1, t2],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+
+        expect(() => {
+            useTaskStore.getState().updateTasks([
+                { id: 't1', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } },
+                { id: 't2', updates: { startDate: THURSDAY, dueDate: FRIDAY } }
+            ], new Set(['t1', 't2']));
+        }).not.toThrow();
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't1')?.dueDate).toBe(THURSDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(THURSDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.dueDate).toBe(FRIDAY);
+    });
+});

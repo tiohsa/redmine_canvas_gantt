@@ -64,6 +64,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     const relations = useTaskStore(state => state.relations);
     const pendingRelationChanges = useTaskStore(state => state.pendingRelationChanges);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
+    const selectedTaskIds = useTaskStore(state => state.selectedTaskIds);
     const selectedRelationId = useTaskStore(state => state.selectedRelationId);
     const draftRelation = useTaskStore(state => state.draftRelation);
     const rowCount = useTaskStore(state => state.rowCount);
@@ -220,6 +221,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         rowCount,
         zoomLevel,
         selectedTaskId,
+        selectedTaskIds,
         selectedRelationId,
         draftRelation,
         showStartDateOnly,
@@ -231,6 +233,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         rowCount,
         selectedRelationId,
         selectedTaskId,
+        selectedTaskIds,
         showDueDateOnly,
         showStartDateOnly,
         tasks,
@@ -283,7 +286,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         // One CalendarDate is shared by every renderer in this frame.
         const today = todayCalendarDate();
         if (engines.current.bg) {
-            engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
+            engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks, selectedTaskIds);
         }
         if (engines.current.baseline) {
             engines.current.baseline.render({
@@ -304,6 +307,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     }, [
         layoutRows,
         selectedTaskId,
+        selectedTaskIds,
         showTaskTitles,
         showTaskBarDates,
         showPointsOrphans,

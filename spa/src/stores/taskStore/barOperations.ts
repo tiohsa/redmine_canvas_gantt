@@ -36,16 +36,17 @@ export const beginBarOperation = (
     tasks: Task[],
     editGenerations: Record<string, number>,
     operationId: string,
-    seedTaskId?: string
+    seedTaskId?: string | string[]
 ): BarOperationState => {
-    const seedTask = seedTaskId ? tasks.find(task => task.id === seedTaskId) : undefined;
+    const seedIds = Array.isArray(seedTaskId) ? seedTaskId : (seedTaskId ? [seedTaskId] : []);
+    const seedTasks = seedIds.length > 0 ? tasks.filter(task => seedIds.includes(task.id)) : [];
     return {
         barOperations: {
             ...operations,
             [operationId]: {
                 operationId,
-                baselineAllTasks: seedTask ? [{ ...seedTask }] : [],
-                baselineGenerations: seedTask ? { [seedTask.id]: editGenerations[seedTask.id] ?? 0 } : {},
+                baselineAllTasks: seedTasks.map(task => ({ ...task })),
+                baselineGenerations: Object.fromEntries(seedTasks.map(task => [task.id, editGenerations[task.id] ?? 0])),
                 entityGenerations: {},
                 completedTaskIds: []
             }

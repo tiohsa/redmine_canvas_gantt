@@ -114,7 +114,8 @@ export class TaskLogicService {
         newStart: number,
         newDue: number,
         moveMode: AutoScheduleMoveModeValue = AutoScheduleMoveMode.ConstraintPush,
-        _visitedIds: Set<string> = new Set()
+        _visitedIds: Set<string> = new Set(),
+        ignoredTaskIds?: Set<string>
     ): DependencyCheckResult {
         void _visitedIds;
         const previousTask = tasks.find((task) => task.id === movedTaskId);
@@ -138,10 +139,11 @@ export class TaskLogicService {
                 relations,
                 movedTaskId,
                 previousTask?.dueDate,
-                newDue
+                newDue,
+                ignoredTaskIds
             );
         }
 
-        return { updates: recalculateDownstreamTasks(nextTasks, relations, movedTaskId) };
+        return { updates: recalculateDownstreamTasks(nextTasks, relations, movedTaskId, ignoredTaskIds) };
     }
 }
