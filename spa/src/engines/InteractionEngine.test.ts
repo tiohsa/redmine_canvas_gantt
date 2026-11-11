@@ -1739,6 +1739,102 @@ describe('InteractionEngine context menu hit testing', () => {
 describe('InteractionEngine multi-task drag and drop', () => {
     const DAY_MS = 24 * 60 * 60 * 1000;
 
+    it.each([
+        { grabbedId: 'point-1', expectedDates: ['2026-11-16', '2026-11-18'] },
+        { grabbedId: 'range', expectedDates: ['2026-11-17', '2026-11-19'] }
+    ])('keeps points aligned with a range through repeated drags of $grabbedId', ({ grabbedId, expectedDates }) => {
+        configureBusinessCalendar({ status: 'ok', revision: 'test', defaultCalendarId: 'p1', projectCalendarIds: { p1: 'p1' },
+            calendars: { p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} } }, warnings: [] });
+        setViewport({ startDate: parseDateOnly('2026-11-01')!, scale: 10 / DAY_MS, rowHeight: 36 });
+        const tasks = [
+            baseTask({ id: 'point-1', rowIndex: 0, startDate: parseDateOnly('2026-11-13')!, dueDate: undefined }),
+            baseTask({ id: 'point-2', rowIndex: 1, startDate: parseDateOnly('2026-11-13')!, dueDate: undefined }),
+            baseTask({ id: 'range', rowIndex: 2, startDate: parseDateOnly('2026-11-10')!, dueDate: parseDateOnly('2026-11-13')! })
+        ];
+        seedTasks(tasks, { selectedTaskIds: tasks.map(task => task.id), selectedTaskId: 'point-1' });
+        useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        try {
+            for (const expected of expectedDates) {
+                const grabbed = useTaskStore.getState().tasks.find(task => task.id === grabbedId)!;
+                const bounds = LayoutEngine.getTaskBounds(grabbed, useTaskStore.getState().viewport, 'hit', 2);
+                const x = bounds.x + bounds.width / 2;
+                const y = bounds.y + bounds.height / 2;
+                container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+                window.dispatchEvent(new MouseEvent('mousemove', { clientX: x + 20, clientY: y, bubbles: true }));
+                window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                const moved = useTaskStore.getState().tasks;
+                expect(formatDateOnly(moved.find(task => task.id === 'point-1')?.startDate)).toBe(expected);
+                expect(formatDateOnly(moved.find(task => task.id === 'point-2')?.startDate)).toBe(expected);
+                expect(formatDateOnly(moved.find(task => task.id === 'range')?.dueDate)).toBe(expected);
+                expect(moved.find(task => task.id === 'point-1')?.dueDate).toBeUndefined();
+            }
+        } finally {
+            engine.detach(); container.remove(); configureBusinessCalendar(undefined);
+        }
+    });
+
+    it('returns a single range to its original dates when dragged right and then left', () => {
+        configureBusinessCalendar({ status: 'ok', revision: 'test', defaultCalendarId: 'p1', projectCalendarIds: { p1: 'p1' },
+            calendars: { p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} } }, warnings: [] });
+        setViewport({ startDate: parseDateOnly('2026-11-01')!, scale: 10 / DAY_MS, rowHeight: 36 });
+        const task = baseTask({ id: 'single', startDate: parseDateOnly('2026-11-10')!, dueDate: parseDateOnly('2026-11-13')! });
+        seedTasks([task], { localTaskPatches: {}, editGenerations: {} });
+        useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        try {
+            for (const [offset, expectedStart, expectedDue] of [
+                [20, '2026-11-12', '2026-11-17'],
+                [-20, '2026-11-10', '2026-11-13']
+            ] as const) {
+                const current = useTaskStore.getState().tasks[0];
+                const bounds = LayoutEngine.getTaskBounds(current, useTaskStore.getState().viewport, 'hit', 2);
+                const x = bounds.x + bounds.width / 2;
+                const y = bounds.y + bounds.height / 2;
+                container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+                window.dispatchEvent(new MouseEvent('mousemove', { clientX: x + offset, clientY: y, bubbles: true }));
+                window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                expect(formatDateOnly(useTaskStore.getState().tasks[0].startDate)).toBe(expectedStart);
+                expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe(expectedDue);
+            }
+        } finally {
+            engine.detach(); container.remove(); configureBusinessCalendar(undefined);
+        }
+    });
+
+    it('moves a due-only task backward across a weekend and restores an original holiday on return', () => {
+        configureBusinessCalendar({ status: 'ok', revision: 'test', defaultCalendarId: 'p1', projectCalendarIds: { p1: 'p1' },
+            calendars: { p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {
+                '2026-11-16': { name: 'Holiday', type: 'non_working' }
+            } } }, warnings: [] });
+        setViewport({ startDate: parseDateOnly('2026-11-01')!, scale: 10 / DAY_MS, rowHeight: 36 });
+        const task = baseTask({ id: 'due', startDate: undefined, dueDate: parseDateOnly('2026-11-16')! });
+        seedTasks([task], { autoSave: true, localTaskPatches: {}, editGenerations: {} });
+        useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        try {
+            const bounds = LayoutEngine.getTaskBounds(task, useTaskStore.getState().viewport, 'hit', 2);
+            const x = bounds.x + bounds.width / 2;
+            const y = bounds.y + bounds.height / 2;
+            container.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+            window.dispatchEvent(new MouseEvent('mousemove', { clientX: x - 10, clientY: y, bubbles: true }));
+            expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-11-13');
+            expect(useTaskStore.getState().tasks[0].startDate).toBeUndefined();
+            window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
+            expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-11-16');
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            expect(useTaskStore.getState().localTaskPatches.due).toBeUndefined();
+            expect(useTaskStore.getState().modifiedTaskIds.has('due')).toBe(false);
+            expect(useTaskStore.getState().activeBarOperationId).toBeNull();
+            expect(apiClient.scheduleMutation).not.toHaveBeenCalled();
+        } finally {
+            engine.detach(); container.remove(); configureBusinessCalendar(undefined);
+        }
+    });
+
     it('does not move a selected task omitted from visible rows', () => {
         setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
         const container = createContainer();

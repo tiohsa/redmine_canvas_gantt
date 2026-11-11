@@ -515,6 +515,18 @@ export class InteractionEngine {
                     projectId: useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId)?.projectId ?? ''
                 }];
 
+            const grabbed = cohort.find(member => member.id === this.drag.taskId)!;
+            const anchor = Number.isFinite(grabbed.originalStartDate)
+                ? grabbed.originalStartDate!
+                : grabbed.originalDueDate!;
+            const workingDayDelta = datePlacementMode === DatePlacementMode.WorkingDays && calendarDayDelta !== 0
+                ? diffWorkingDays(anchor, normalizeWorkingDate(
+                    addCalendarDays(anchor, calendarDayDelta),
+                    calendarDayDelta > 0 ? 'forward' : 'backward',
+                    grabbed.projectId
+                ), grabbed.projectId)
+                : 0;
+
             const cohortTaskIds = new Set(cohort.map(m => m.id));
             const updates: Array<{ id: string; updates: Partial<Task>; datePlacementMode?: DatePlacementModeValue }> = [];
 
@@ -527,24 +539,21 @@ export class InteractionEngine {
                         newStart = addCalendarDays(member.originalStartDate!, calendarDayDelta);
                         newDue = addCalendarDays(member.originalDueDate!, calendarDayDelta);
                     } else {
-                        const candidateStart = addCalendarDays(member.originalStartDate!, calendarDayDelta);
-                        newStart = normalizeWorkingDate(candidateStart, 'forward', member.projectId);
+                        newStart = shiftByWorkingDays(member.originalStartDate!, workingDayDelta, member.projectId);
                         const duration = diffWorkingDays(member.originalStartDate!, member.originalDueDate!, member.projectId);
-                        newDue = shiftByWorkingDays(newStart, duration, member.projectId);
+                        newDue = workingDayDelta === 0 ? member.originalDueDate : shiftByWorkingDays(newStart, duration, member.projectId);
                     }
                 } else if (Number.isFinite(member.originalStartDate)) {
                     if (datePlacementMode === DatePlacementMode.CalendarDays) {
                         newStart = addCalendarDays(member.originalStartDate!, calendarDayDelta);
                     } else {
-                        const candidateStart = addCalendarDays(member.originalStartDate!, calendarDayDelta);
-                        newStart = normalizeWorkingDate(candidateStart, 'forward', member.projectId);
+                        newStart = shiftByWorkingDays(member.originalStartDate!, workingDayDelta, member.projectId);
                     }
                 } else if (Number.isFinite(member.originalDueDate)) {
                     if (datePlacementMode === DatePlacementMode.CalendarDays) {
                         newDue = addCalendarDays(member.originalDueDate!, calendarDayDelta);
                     } else {
-                        const candidateDue = addCalendarDays(member.originalDueDate!, calendarDayDelta);
-                        newDue = normalizeWorkingDate(candidateDue, 'backward', member.projectId);
+                        newDue = shiftByWorkingDays(member.originalDueDate!, workingDayDelta, member.projectId);
                     }
                 }
 
@@ -559,7 +568,10 @@ export class InteractionEngine {
                     updates.push({
                         id: member.id,
                         updates: memberUpdates,
-                        datePlacementMode
+                        // Restore the exact snapshot, including original non-working dates.
+                        datePlacementMode: datePlacementMode === DatePlacementMode.WorkingDays && workingDayDelta === 0
+                            ? DatePlacementMode.CalendarDays
+                            : datePlacementMode
                     });
                 }
             }
