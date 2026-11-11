@@ -1070,7 +1070,7 @@ const resolveCascadingScheduleUpdates = (
     // schedule seeds and dependency updates still require edit permission.
     const nonEditableTask = [...affectedTaskIds]
         .map((taskId) => workingTasks.find((task) => task.id === taskId))
-        .find((task) => task && (permissionRequiredIds.has(task.id) || (!task.datesDerived && !task.hasChildren)) && !TaskLogicService.canEditTask(task));
+        .find((task) => task && (permissionRequiredIds.has(task.id) || !task.datesDerived) && !TaskLogicService.canEditTask(task));
     if (nonEditableTask) {
         return {
             tasks,
@@ -2387,7 +2387,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     prepared.updatedTask.dueDate!,
                     autoScheduleMoveMode,
                     undefined,
-                    cohortSet
+                    cohortSet,
+                    // The merged cohort graph is checked after all proposals are applied below.
+                    Boolean(cohortTaskIds && cohortTaskIds.size > 1 && autoScheduleMoveMode === AutoScheduleMoveMode.LinkedDownstreamShift)
                 );
                 if (depResult.error) {
                     notifyDragError(depResult.error, barOperationId);

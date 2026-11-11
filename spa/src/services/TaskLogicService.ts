@@ -115,7 +115,8 @@ export class TaskLogicService {
         newDue: number,
         moveMode: AutoScheduleMoveModeValue = AutoScheduleMoveMode.ConstraintPush,
         _visitedIds: Set<string> = new Set(),
-        ignoredTaskIds?: Set<string>
+        ignoredTaskIds?: Set<string>,
+        deferDependencyValidation = false
     ): DependencyCheckResult {
         void _visitedIds;
         const previousTask = tasks.find((task) => task.id === movedTaskId);
@@ -140,7 +141,8 @@ export class TaskLogicService {
                 movedTaskId,
                 previousTask?.dueDate,
                 newDue,
-                ignoredTaskIds
+                ignoredTaskIds,
+                deferDependencyValidation
             );
         }
 

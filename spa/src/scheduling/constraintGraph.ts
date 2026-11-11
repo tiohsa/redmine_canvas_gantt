@@ -335,7 +335,9 @@ export const calculateLinkedDownstreamUpdates = (
     originTaskId: string,
     previousDueDate: number | undefined,
     nextDueDate: number | undefined,
-    ignoredTaskIds?: Set<string>
+    ignoredTaskIds?: Set<string>,
+    // Callers deferring dependency checks must validate the merged final graph.
+    deferDependencyValidation = false
 ): { updates: Map<string, Partial<Task>>; error?: string } => {
     if (!hasFiniteDate(previousDueDate) || !hasFiniteDate(nextDueDate)) {
         return { updates: new Map() };
@@ -387,6 +389,15 @@ export const calculateLinkedDownstreamUpdates = (
         });
     });
 
+    for (const shifted of updates.values()) {
+        if (!hasFiniteDate(shifted.startDate) || !hasFiniteDate(shifted.dueDate) || shifted.startDate > shifted.dueDate) {
+            return {
+                updates: new Map(),
+                error: i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.'
+            };
+        }
+    }
+
     for (const edge of edges) {
         if (!clusterTaskIds.has(edge.successorId)) continue;
 
@@ -400,16 +411,9 @@ export const calculateLinkedDownstreamUpdates = (
         if (predecessor.datesDerived || !hasValidDateRange(predecessor)) continue;
 
         const shiftedStartDate = shiftedSuccessor.startDate;
-        const shiftedDueDate = shiftedSuccessor.dueDate;
-        if (!hasFiniteDate(shiftedStartDate) || !hasFiniteDate(shiftedDueDate) || shiftedStartDate > shiftedDueDate) {
-            return {
-                updates: new Map(),
-                error: i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.'
-            };
-        }
-
+        if (deferDependencyValidation) continue;
         const minimumSuccessorStart = addWorkingDays(predecessor.dueDate!, edge.gapDays, successor.projectId);
-        if (shiftedStartDate < minimumSuccessorStart) {
+        if (shiftedStartDate! < minimumSuccessorStart) {
             return {
                 updates: new Map(),
                 error: i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.'

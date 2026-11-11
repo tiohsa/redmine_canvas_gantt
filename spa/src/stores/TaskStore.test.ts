@@ -7769,13 +7769,13 @@ describe('TaskStore multi-task selection and batch updates', () => {
         expect(state.localTaskPatches.dragged).toHaveLength(2);
     });
 
-    it('rejects a new internal dependency violation in a selected cohort', () => {
+    it.each([AutoScheduleMoveMode.ConstraintPush, AutoScheduleMoveMode.LinkedDownstreamShift])('rejects a new internal dependency violation in a selected cohort in mode %s', (mode) => {
         const first = buildTask({ id: 'first', startDate: MONDAY, dueDate: TUESDAY });
         const second = buildTask({ id: 'second', startDate: WEDNESDAY, dueDate: THURSDAY });
         useTaskStore.setState({ tasks: [first, second], allTasks: [first, second], relations: [
             { id: 'edge', from: 'first', to: 'second', type: 'precedes' as const }
         ] });
-        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+        useUIStore.setState({ autoScheduleMoveMode: mode });
         useTaskStore.getState().updateTasks([
             { id: 'first', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
             { id: 'second', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } }
@@ -7820,6 +7820,78 @@ describe('TaskStore multi-task selection and batch updates', () => {
         ], new Set(['first', 'second']));
         expect(useTaskStore.getState().allTasks).toEqual([first, second]);
         expect(useTaskStore.getState().relations).toEqual(relations);
+    });
+
+    it.each([false, true])('merges cross-calendar shared successor proposals regardless of ordering (reversed: %s)', (reversed) => {
+        configureBusinessCalendar({ status: 'ok', revision: 'cohort-shared', defaultCalendarId: 'normal',
+            projectCalendarIds: { holiday: 'holiday', normal: 'normal' }, calendars: {
+                holiday: { id: 'holiday', name: 'Holiday', nonWorkingWeekDays: [0, 6], days: { '2026-01-07': { name: 'Holiday', type: 'non_working' } } },
+                normal: { id: 'normal', name: 'Normal', nonWorkingWeekDays: [0, 6], days: {} }
+            }, warnings: [] });
+        try {
+            const first = buildTask({ id: 'first', projectId: 'holiday', startDate: TUESDAY, dueDate: TUESDAY });
+            const second = buildTask({ id: 'second', projectId: 'normal', startDate: TUESDAY, dueDate: TUESDAY });
+            const successor = buildTask({ id: 'successor', projectId: 'normal', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+            const tasks = [first, second, successor];
+            useTaskStore.setState({ tasks, allTasks: tasks, relations: [
+                { id: 'a', from: 'first', to: 'successor', type: 'precedes' },
+                { id: 'b', from: 'second', to: 'successor', type: 'precedes' }
+            ] });
+            useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+            const updates = [first, second].map(task => ({ id: task.id,
+                updates: { startDate: THURSDAY, dueDate: THURSDAY }, datePlacementMode: DatePlacementMode.CalendarDays }));
+            useTaskStore.getState().updateTasks(reversed ? updates.reverse() : updates, new Set(['first', 'second']));
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'successor')).toMatchObject({ startDate: FRIDAY, dueDate: FRIDAY });
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'first')?.dueDate).toBe(THURSDAY);
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'second')?.dueDate).toBe(THURSDAY);
+        } finally { configureBusinessCalendar(undefined); }
+    });
+
+    it.each([false, true])('merges backward cross-calendar proposals before checking dependencies (reversed: %s)', (reversed) => {
+        configureBusinessCalendar({ status: 'ok', revision: 'cohort-backward', defaultCalendarId: 'normal',
+            projectCalendarIds: { holiday: 'holiday', normal: 'normal' }, calendars: {
+                holiday: { id: 'holiday', name: 'Holiday', nonWorkingWeekDays: [0, 6], days: { '2026-01-07': { name: 'Holiday', type: 'non_working' } } },
+                normal: { id: 'normal', name: 'Normal', nonWorkingWeekDays: [0, 6], days: {} }
+            }, warnings: [] });
+        try {
+            const first = buildTask({ id: 'first', projectId: 'holiday', startDate: THURSDAY, dueDate: THURSDAY });
+            const second = buildTask({ id: 'second', projectId: 'normal', startDate: THURSDAY, dueDate: THURSDAY });
+            const successor = buildTask({ id: 'successor', projectId: 'holiday', startDate: FRIDAY, dueDate: FRIDAY });
+            const tasks = [first, second, successor];
+            useTaskStore.setState({ tasks, allTasks: tasks, relations: [
+                { id: 'a', from: 'first', to: 'successor', type: 'precedes' },
+                { id: 'b', from: 'second', to: 'successor', type: 'precedes' }
+            ] });
+            useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+            const updates = [
+                { id: 'first', updates: { startDate: TUESDAY, dueDate: TUESDAY }, datePlacementMode: DatePlacementMode.CalendarDays },
+                { id: 'second', updates: { startDate: TUESDAY, dueDate: TUESDAY }, datePlacementMode: DatePlacementMode.CalendarDays }
+            ];
+            useTaskStore.getState().updateTasks(reversed ? updates.reverse() : updates, new Set(['first', 'second']));
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'successor')).toMatchObject({ startDate: THURSDAY, dueDate: THURSDAY });
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'first')?.dueDate).toBe(TUESDAY);
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'second')?.dueDate).toBe(TUESDAY);
+        } finally { configureBusinessCalendar(undefined); }
+    });
+
+    it('rejects a merged linked shift that violates an external predecessor', () => {
+        const first = buildTask({ id: 'first', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+        const second = buildTask({ id: 'second', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+        const external = buildTask({ id: 'external', startDate: THURSDAY, dueDate: THURSDAY });
+        const successor = buildTask({ id: 'successor', startDate: FRIDAY, dueDate: FRIDAY });
+        const tasks = [first, second, external, successor];
+        useTaskStore.setState({ tasks, allTasks: tasks, relations: [
+            { id: 'a', from: 'first', to: 'successor', type: 'precedes' },
+            { id: 'b', from: 'second', to: 'successor', type: 'precedes' },
+            { id: 'c', from: 'external', to: 'successor', type: 'precedes' }
+        ] });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+        useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { startDate: TUESDAY, dueDate: TUESDAY } },
+            { id: 'second', updates: { startDate: TUESDAY, dueDate: TUESDAY } }
+        ], new Set(['first', 'second']));
+        expect(useTaskStore.getState().allTasks).toEqual(tasks);
+        expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
     });
 
     it('handles multiple predecessors in LinkedDownstreamShift for forward and backward shifts', () => {
