@@ -306,7 +306,19 @@ module RedmineCanvasGantt
       validate_calendar_id!(base, "#{path}: calendar.base") unless base.nil?
       validate_managed!(calendar['managed'], path) if calendar.key?('managed')
       week_days = normalize_week_days(calendar['non_working_week_days'], path) if calendar.key?('non_working_week_days')
+      normalized_days = normalize_calendar_days(data, path)
 
+      {
+        id: id.freeze,
+        name: name.freeze,
+        base: base&.freeze,
+        non_working_week_days: week_days,
+        days: normalized_days,
+        path: path.freeze
+      }.freeze
+    end
+
+    def normalize_calendar_days(data, path)
       days = Array(data.fetch('days', []))
       unless data.fetch('days', []).is_a?(Array)
         raise configuration_error("#{path}: days must be an array", file: path)
@@ -334,14 +346,7 @@ module RedmineCanvasGantt
         normalized_days[date] = { name: day_name, type: type }.freeze
       end
 
-      {
-        id: id.freeze,
-        name: name.freeze,
-        base: base&.freeze,
-        non_working_week_days: week_days,
-        days: normalized_days.freeze,
-        path: path.freeze
-      }.freeze
+      normalized_days.freeze
     end
 
     def resolve_calendars(definitions)

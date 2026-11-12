@@ -371,6 +371,64 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect { loader.load }.to raise_error(described_class::ConfigurationError, /type must be working or non_working/)
   end
 
+  it 'accepts absent and empty days and freezes loaded day values' do
+    write('absent.yml', calendar_yaml(id: 'absent'))
+    write('empty.yml', calendar_yaml(id: 'empty') + "days: []\n")
+    write('populated.yml', calendar_yaml(
+      id: 'populated', days: [{ date: '2027-01-01', name: 'Holiday', type: 'non_working' }]
+    ))
+
+    calendars = loader.load.calendars
+    expect(calendars.fetch('absent').days).to eq({})
+    expect(calendars.fetch('empty').days).to eq({})
+    days = calendars.fetch('populated').days
+    expect(days).to be_frozen
+    expect(days.fetch(Date.new(2027, 1, 1))).to eq(name: 'Holiday', type: 'non_working')
+    expect(days.values.first).to be_frozen
+    expect(days.values.first.values).to all(be_frozen)
+  end
+
+  it 'accepts the days count limit and rejects excess before validating entries' do
+    entries = Array.new(described_class::MAX_DAYS) do |offset|
+      { date: (Date.new(2000, 1, 1) + offset).iso8601, name: 'Day', type: 'working' }
+    end
+    write('limit.yml', calendar_yaml(id: 'limit', days: entries))
+    expect(loader.load.calendars.fetch('limit').days.size).to eq(described_class::MAX_DAYS)
+
+    write('limit.yml', calendar_yaml(id: 'limit', days: entries) + "  - invalid\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /days count exceeds 10000/)
+  end
+
+  {
+    'a non-array days value' => ["days: null\n", /days must be an array/],
+    'a non-mapping entry' => ["days:\n  - invalid\n", /days\[0\]: must be a mapping/],
+    'an unknown day key' => ["days:\n  - extra: true\n", /days\[0\]: unknown key/],
+    'an invalid date format' => ["days:\n  - date: bad\n    name: Day\n    type: working\n", /date must use YYYY-MM-DD/],
+    'an empty day name' => ["days:\n  - date: 2027-01-01\n    name: ''\n    type: working\n", /name must be a non-empty string/],
+    'an oversized day name' => ["days:\n  - date: 2027-01-01\n    name: #{'x' * 256}\n    type: working\n", /name must be a non-empty string/]
+  }.each do |description, (days_yaml, message)|
+    it "rejects #{description}" do
+      write('invalid.yml', calendar_yaml(id: 'invalid') + days_yaml)
+      expect { loader.load }.to raise_error(described_class::ConfigurationError, message)
+    end
+  end
+
+  it 'reports a duplicate date before invalid name and type on the duplicate entry' do
+    write('duplicate.yml', calendar_yaml(
+      id: 'duplicate-days',
+      days: [
+        { date: '2027-01-01', name: 'One', type: 'working' },
+        { date: '2027-01-01', name: "''", type: 'invalid' }
+      ]
+    ))
+
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      expect(error.message).to eq('duplicate.yml: duplicate date.')
+      expect(error.diagnostic).to include(code: 'DUPLICATE_DATE', file: 'duplicate.yml',
+                                          value: '2027-01-01', message: 'duplicate date.')
+    }
+  end
+
   it 'rejects calendars with no weekly working day' do
     write('invalid.yml', calendar_yaml(id: 'invalid', week_days: [1, 2, 3, 4, 5, 6, 7]))
 
