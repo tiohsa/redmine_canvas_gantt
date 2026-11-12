@@ -2,6 +2,9 @@
 .antigravitycli/
 .codegraph/
 docs/*
+!docs/README.md
+!docs/specifications/
+!docs/timer-session-contract.md
 !docs/demo-current.gif
 !docs/architecture/
 docs/architecture/*
