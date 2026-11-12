@@ -43,7 +43,7 @@ import {
 import type { QueryContext, QueryOverrides } from '../query/types';
 import { resolvedStateToQueryContext } from '../query/queryStateCodec';
 import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
-import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
+import { buildSchedulingEdges, detectSchedulingCycleTaskIds, addWorkingDays, type SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode, DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
@@ -258,6 +258,8 @@ export interface TaskState {
     organizeByDependency: boolean;
     viewportFromStorage: boolean;
     selectedTaskId: string | null;
+    selectedTaskIds: string[];
+    selectionAnchorId?: string | null;
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
     hoveredTaskId: string | null;
@@ -327,13 +329,27 @@ export interface TaskState {
     hasPendingChanges: () => boolean;
     resolveUnknownRelationChange: (draftId: string, resolution: 'assume_applied' | 'retry') => Promise<boolean>;
     selectTask: (id: string | null) => void;
+    toggleSelectTask: (id: string) => void;
+    selectTaskRange: (targetId: string) => void;
+    clearSelection: () => void;
+    setSelectedTasks: (ids: string[]) => void;
     selectRelation: (id: string | null) => void;
     setDraftRelation: (relation: DraftRelation | null) => void;
     clearRelationSelection: () => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
-    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>, datePlacementMode?: DatePlacementModeValue) => void;
-    beginBarOperation: (seedTaskId?: string) => string;
+    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>, datePlacementMode?: DatePlacementModeValue, barOperationId?: string | null) => void;
+    updateTasks: (
+        taskUpdates: Array<{
+            id: string;
+            updates: Partial<Task>;
+            mutationIntent?: Partial<Task>;
+            datePlacementMode?: DatePlacementModeValue;
+        }>,
+        cohortTaskIds?: Set<string>,
+        barOperationId?: string | null
+    ) => 'applied' | 'unchanged' | 'rejected';
+    beginBarOperation: (seedTaskId?: string | string[]) => string;
     endBarOperation: (operationId: string) => void;
     rollbackBarOperation: (operationId: string) => void;
     settleBarOperationTask: (taskId: string, operationGeneration?: number) => void;
@@ -984,17 +1000,20 @@ const resolveCascadingScheduleUpdates = (
     tasks: Task[],
     relations: Relation[],
     seedTaskIds: Iterable<string>,
-    propagateDependencies = true
+    propagateDependencies = true,
+    ignoredTaskIds?: Set<string>
 ): { tasks: Task[]; updates: Map<string, Partial<Task>>; error?: string } => {
     let workingTasks = tasks;
     const updates = new Map<string, Partial<Task>>();
     const affectedTaskIds = new Set(seedTaskIds);
+    const permissionRequiredIds = new Set(affectedTaskIds);
     let frontier = new Set(affectedTaskIds);
     const maxPasses = Math.max(1, tasks.length * 2);
 
     const applyUpdates = (nextUpdates: Map<string, Partial<Task>>): Set<string> => {
         const changedIds = new Set<string>();
         nextUpdates.forEach((patch, taskId) => {
+            if (ignoredTaskIds?.has(taskId)) return;
             const task = workingTasks.find((candidate) => candidate.id === taskId);
             if (!task) return;
             const nextTask = { ...task, ...patch };
@@ -1033,18 +1052,25 @@ const resolveCascadingScheduleUpdates = (
                 taskId,
                 task.startDate!,
                 task.dueDate!,
-                AutoScheduleMoveMode.ConstraintPush
+                AutoScheduleMoveMode.ConstraintPush,
+                undefined,
+                ignoredTaskIds
             );
             if (result.error) return { tasks, updates: new Map(), error: result.error };
-            applyUpdates(result.updates).forEach((changedId) => changedIds.add(changedId));
+            applyUpdates(result.updates).forEach((changedId) => {
+                permissionRequiredIds.add(changedId);
+                changedIds.add(changedId);
+            });
         }
 
         frontier = changedIds;
     }
 
+    // Derived ancestor dates are previews, not independent mutations. Actual
+    // schedule seeds and dependency updates still require edit permission.
     const nonEditableTask = [...affectedTaskIds]
         .map((taskId) => workingTasks.find((task) => task.id === taskId))
-        .find((task) => task && !TaskLogicService.canEditTask(task));
+        .find((task) => task && (permissionRequiredIds.has(task.id) || !task.datesDerived) && !TaskLogicService.canEditTask(task));
     if (nonEditableTask) {
         return {
             tasks,
@@ -1235,6 +1261,16 @@ const taskFieldsAffectLayout = (
 };
 
 export const useTaskStore = create<TaskState>((set, get) => {
+    const dragNotifications = new Map<string, Set<string>>();
+    const notifyDragError = (message: string, operationId?: string | null) => {
+        if (operationId) {
+            const shown = dragNotifications.get(operationId) ?? new Set<string>();
+            if (shown.has(message)) return;
+            shown.add(message);
+            dragNotifications.set(operationId, shown);
+        }
+        useUIStore.getState().addNotification(message, 'error');
+    };
     const inflightReads = new Map<string, Promise<ReadApplyOutcome>>();
     const mutationResyncDataGuards = new WeakMap<object, () => boolean>();
     const canApplyMutationResyncData = (data: ApiData) => mutationResyncDataGuards.get(data)?.() ?? true;
@@ -1413,6 +1449,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     organizeByDependency: preferences.organizeByDependency ?? false,
     viewportFromStorage: Boolean(preferences.viewport),
     selectedTaskId: null,
+    selectedTaskIds: [],
+    selectionAnchorId: null,
     selectedRelationId: null,
     draftRelation: null,
     hoveredTaskId: null,
@@ -1909,18 +1947,93 @@ export const useTaskStore = create<TaskState>((set, get) => {
     },
     selectTask: (id) => set({
         selectedTaskId: id,
+        selectedTaskIds: id ? [id] : [],
+        selectionAnchorId: id,
+        selectedRelationId: null,
+        draftRelation: null,
+        contextMenu: null
+    }),
+    toggleSelectTask: (id) => set((state) => {
+        const isSelected = state.selectedTaskIds.includes(id);
+        const nextSelectedTaskIds = isSelected
+            ? state.selectedTaskIds.filter(taskId => taskId !== id)
+            : [...state.selectedTaskIds, id];
+        const nextSelectedTaskId = isSelected
+            ? (state.selectedTaskId === id ? (nextSelectedTaskIds[nextSelectedTaskIds.length - 1] ?? null) : state.selectedTaskId)
+            : id;
+        return {
+            selectedTaskId: nextSelectedTaskId,
+            selectedTaskIds: nextSelectedTaskIds,
+            selectionAnchorId: nextSelectedTaskId,
+            selectedRelationId: null,
+            draftRelation: null,
+            contextMenu: null
+        };
+    }),
+    selectTaskRange: (targetId) => set((state) => {
+        const anchorId = state.selectionAnchorId ?? state.selectedTaskId ?? state.tasks[0]?.id;
+        if (!anchorId) {
+            return {
+                selectedTaskId: targetId,
+                selectedTaskIds: [targetId],
+                selectionAnchorId: targetId,
+                selectedRelationId: null,
+                draftRelation: null,
+                contextMenu: null
+            };
+        }
+        const visibleTaskIds = state.tasks.map(t => t.id);
+        const anchorIndex = visibleTaskIds.indexOf(anchorId);
+        const targetIndex = visibleTaskIds.indexOf(targetId);
+        if (anchorIndex === -1 || targetIndex === -1) {
+            return {
+                selectedTaskId: targetId,
+                selectedTaskIds: [targetId],
+                selectionAnchorId: targetId,
+                selectedRelationId: null,
+                draftRelation: null,
+                contextMenu: null
+            };
+        }
+        const [startIndex, endIndex] = anchorIndex <= targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+        const rangeIds = visibleTaskIds.slice(startIndex, endIndex + 1);
+        return {
+            selectedTaskId: targetId,
+            selectedTaskIds: rangeIds,
+            selectionAnchorId: anchorId,
+            selectedRelationId: null,
+            draftRelation: null,
+            contextMenu: null
+        };
+    }),
+    clearSelection: () => set({
+        selectedTaskId: null,
+        selectedTaskIds: [],
+        selectionAnchorId: null,
+        selectedRelationId: null,
+        draftRelation: null,
+        contextMenu: null
+    }),
+    setSelectedTasks: (ids) => set({
+        selectedTaskIds: ids,
+        selectedTaskId: ids[ids.length - 1] ?? null,
+        selectionAnchorId: ids[0] ?? null,
         selectedRelationId: null,
         draftRelation: null,
         contextMenu: null
     }),
     selectRelation: (id) => set({
         selectedTaskId: null,
+        selectedTaskIds: [],
+        selectionAnchorId: null,
         selectedRelationId: id,
         draftRelation: null,
         contextMenu: null
     }),
     setDraftRelation: (relation) => set({
         selectedTaskId: null,
+        selectedTaskIds: [],
+        selectionAnchorId: null,
         selectedRelationId: null,
         draftRelation: relation,
         contextMenu: null
@@ -1929,7 +2042,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({
         contextMenu: menu,
-        ...(menu ? { selectedRelationId: null, draftRelation: null } : {})
+        ...(menu ? {
+            selectedTaskId: menu.taskId,
+            selectedTaskIds: [menu.taskId],
+            selectionAnchorId: menu.taskId,
+            selectedRelationId: null,
+            draftRelation: null
+        } : {})
     }),
     setSortingSuspended: (suspended) => set((state) => {
         if (!suspended && state.isSortingSuspended) {
@@ -2090,13 +2209,31 @@ export const useTaskStore = create<TaskState>((set, get) => {
     },
 
     endBarOperation: (operationId) => set((state) => {
+        dragNotifications.delete(operationId);
         const transition = endBarOperationState(
             state.barOperations,
             state.activeBarOperationId,
             state.allTasks,
             state.editGenerations,
-            operationId
+            operationId,
+            state.localTaskPatches
         );
+        const operation = transition.barOperations[operationId];
+        if (operation && operation.baselineAllTasks.some(baseline =>
+            (state.localTaskPatches[baseline.id] ?? []).some(patch => patch.barOperationId === operationId)
+        ) && operation.baselineAllTasks.every(baseline => {
+            const current = state.allTasks.find(task => task.id === baseline.id);
+            const owned = (state.localTaskPatches[baseline.id] ?? []).filter(patch => patch.barOperationId === operationId);
+            return current && owned.every(patch => Object.keys(patch.projection).every(field => (
+                Object.is(current[field as keyof Task], baseline[field as keyof Task])
+            )));
+        })) {
+            const rollback = buildBarOperationRollback({ ...state, ...transition }, operationId);
+            if (rollback) {
+                const derived = buildDerivedTaskState(state, { allTasks: rollback.allTasks });
+                return { ...rollback, ...toDerivedTaskStatePatch(derived) };
+            }
+        }
         return transition.barOperations === state.barOperations && transition.activeBarOperationId === state.activeBarOperationId
             ? state
             : transition;
@@ -2135,8 +2272,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
 
     rollbackBarOperation: (operationId) => set((state) => {
+        dragNotifications.delete(operationId);
         const rollback = buildBarOperationRollback(state, operationId);
-        if (!rollback) return state;
+        if (!rollback) return state.activeBarOperationId === operationId ? { activeBarOperationId: null } : state;
         const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
         const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, effectiveRelations, state.calculateCriticalPathEnabled);
         const changedFields = new Set<string>();
@@ -2158,60 +2296,135 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
-    updateTask: (id, updates, mutationIntent = updates, datePlacementMode) => set((state) => {
-        const task = state.allTasks.find(t => t.id === id);
-        if (!task) return state;
-
-        if (!TaskLogicService.canEditTask(task)) {
-            console.warn('Task is not editable');
-            return state;
-        }
-
-        const hasDerivedDateEdit = task.datesDerived && (
-            hasOwnField(updates, 'startDate') || hasOwnField(updates, 'dueDate') ||
-            hasOwnField(mutationIntent, 'startDate') || hasOwnField(mutationIntent, 'dueDate')
-        );
-        if (hasDerivedDateEdit) {
-            useUIStore.getState().addNotification(
-                i18n.t('label_dates_derived_from_children') || 'Dates for this task are derived from its children.',
-                'error'
-            );
-        }
+    updateTasks: (taskUpdates, cohortTaskIds, barOperationId) => {
+        let outcome: 'applied' | 'unchanged' | 'rejected' = 'unchanged';
+        set((state) => {
+        if (!taskUpdates || taskUpdates.length === 0) return state;
 
         invalidateDataRequests();
-
-        const capturedDatePlacementMode = datePlacementMode ?? useUIStore.getState().datePlacementMode;
-        const requestedUpdates = task.datesDerived
-            ? Object.fromEntries(Object.entries(updates).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
-            : updates;
-        const requestedMutationIntent = task.datesDerived
-            ? Object.fromEntries(Object.entries(mutationIntent).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
-            : mutationIntent;
-        const canonicalUpdates = normalizeTaskDateUpdates(task, requestedUpdates, capturedDatePlacementMode);
-        const canonicalMutationIntent = normalizeTaskDateUpdates(task, requestedMutationIntent, capturedDatePlacementMode);
-        if (Object.keys(canonicalUpdates).length === 0 && Object.keys(canonicalMutationIntent).length === 0) return state;
-        const updatedTask = { ...task, ...canonicalUpdates };
-        TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
         const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
+        const autoScheduleMoveMode = useUIStore.getState().autoScheduleMoveMode;
 
-        let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
-        const pendingUpdates = new Map<string, Partial<Task>>();
-        const isContextChange = hasOwnField(canonicalUpdates, 'projectId') || hasOwnField(canonicalUpdates, 'trackerId');
+        type PreparedUpdate = {
+            task: Task;
+            canonicalUpdates: Partial<Task>;
+            canonicalMutationIntent: Partial<Task>;
+            capturedDatePlacementMode: DatePlacementModeValue;
+            updatedTask: Task;
+        };
 
-        if (!isContextChange && (hasOwnField(canonicalUpdates, 'startDate') || hasOwnField(canonicalUpdates, 'dueDate'))) {
-            const depResult = TaskLogicService.checkDependencies(
-                state.allTasks,
-                effectiveRelations,
-                id,
-                updatedTask.startDate!,
-                updatedTask.dueDate!,
-                useUIStore.getState().autoScheduleMoveMode
-            );
-            if (depResult.error) {
-                useUIStore.getState().addNotification(depResult.error, 'error');
-                return state;
+        const preparedUpdates: PreparedUpdate[] = [];
+        const taskById = new Map(state.allTasks.map(task => [task.id, task]));
+
+        for (const item of taskUpdates) {
+            const task = taskById.get(item.id);
+            if (!task) { outcome = 'rejected'; continue; }
+
+            if (!TaskLogicService.canEditTask(task)) {
+                outcome = 'rejected';
+                console.warn('Task is not editable');
+                continue;
             }
-            depResult.updates.forEach((v, k) => pendingUpdates.set(k, v));
+
+            const hasDerivedDateEdit = task.datesDerived && (
+                hasOwnField(item.updates, 'startDate') || hasOwnField(item.updates, 'dueDate') ||
+                hasOwnField(item.mutationIntent ?? item.updates, 'startDate') || hasOwnField(item.mutationIntent ?? item.updates, 'dueDate')
+            );
+            if (hasDerivedDateEdit) {
+                useUIStore.getState().addNotification(
+                    i18n.t('label_dates_derived_from_children') || 'Dates for this task are derived from its children.',
+                    'error'
+                );
+            }
+
+            const capturedDatePlacementMode = item.datePlacementMode ?? useUIStore.getState().datePlacementMode;
+            const requestedUpdates = task.datesDerived
+                ? Object.fromEntries(Object.entries(item.updates).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+                : item.updates;
+            const requestedMutationIntent = task.datesDerived
+                ? Object.fromEntries(Object.entries(item.mutationIntent ?? item.updates).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+                : (item.mutationIntent ?? item.updates);
+
+            const canonicalUpdates = normalizeTaskDateUpdates(task, requestedUpdates, capturedDatePlacementMode);
+            const canonicalMutationIntent = normalizeTaskDateUpdates(task, requestedMutationIntent, capturedDatePlacementMode);
+            if (Object.keys(canonicalUpdates).length === 0 && Object.keys(canonicalMutationIntent).length === 0) continue;
+
+            const updatedTask = { ...task, ...canonicalUpdates };
+            TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
+
+            preparedUpdates.push({
+                task,
+                canonicalUpdates,
+                canonicalMutationIntent,
+                capturedDatePlacementMode,
+                updatedTask
+            });
+        }
+
+        if (cohortTaskIds && (outcome === 'rejected' || preparedUpdates.length !== cohortTaskIds.size ||
+            new Set(preparedUpdates.map(p => p.task.id)).size !== cohortTaskIds.size ||
+            preparedUpdates.some(p => !cohortTaskIds.has(p.task.id)))) {
+            outcome = 'rejected';
+            return state;
+        }
+        if (preparedUpdates.length === 0) return state;
+        if (barOperationId && cohortTaskIds && preparedUpdates.every(({ task, canonicalUpdates }) =>
+            Object.entries(canonicalUpdates).every(([field, value]) => Object.is(task[field as keyof Task], value))
+        )) return state;
+
+        const updatedTaskById = new Map<string, Task>(preparedUpdates.map(p => [p.task.id, p.updatedTask]));
+        let currentTasks = state.allTasks.map(t => updatedTaskById.get(t.id) ?? t);
+        const pendingUpdates = new Map<string, Partial<Task>>();
+        const cohortSet = cohortTaskIds ?? new Set(preparedUpdates.map(p => p.task.id));
+
+        for (const prepared of preparedUpdates) {
+            const isContextChange = hasOwnField(prepared.canonicalUpdates, 'projectId') || hasOwnField(prepared.canonicalUpdates, 'trackerId');
+            if (effectiveRelations.length > 0 && !isContextChange && (hasOwnField(prepared.canonicalUpdates, 'startDate') || hasOwnField(prepared.canonicalUpdates, 'dueDate'))) {
+                const tasksForDependencyCheck = state.allTasks.map(t => {
+                    if (t.id === prepared.task.id) return prepared.task;
+                    const updated = updatedTaskById.get(t.id);
+                    if (updated && Number.isFinite(updated.dueDate) && Number.isFinite(t.dueDate) && updated.dueDate! < t.dueDate!) {
+                        return updated;
+                    }
+                    return t;
+                });
+                const depResult = TaskLogicService.checkDependencies(
+                    tasksForDependencyCheck,
+                    effectiveRelations,
+                    prepared.task.id,
+                    prepared.updatedTask.startDate!,
+                    prepared.updatedTask.dueDate!,
+                    autoScheduleMoveMode,
+                    undefined,
+                    cohortSet,
+                    // The merged cohort graph is checked after all proposals are applied below.
+                    Boolean(cohortTaskIds && cohortTaskIds.size > 1 && autoScheduleMoveMode === AutoScheduleMoveMode.LinkedDownstreamShift)
+                );
+                if (depResult.error) {
+                    outcome = 'rejected';
+                    notifyDragError(depResult.error, barOperationId);
+                    return state;
+                }
+                depResult.updates.forEach((v, k) => {
+                    const existing = pendingUpdates.get(k);
+                    if (!existing) {
+                        pendingUpdates.set(k, v);
+                    } else {
+                        const mergedStart = existing.startDate !== undefined && v.startDate !== undefined
+                            ? Math.max(existing.startDate, v.startDate)
+                            : (v.startDate ?? existing.startDate);
+                        const mergedDue = existing.dueDate !== undefined && v.dueDate !== undefined
+                            ? Math.max(existing.dueDate, v.dueDate)
+                            : (v.dueDate ?? existing.dueDate);
+                        pendingUpdates.set(k, {
+                            ...existing,
+                            ...v,
+                            ...(mergedStart !== undefined ? { startDate: mergedStart } : {}),
+                            ...(mergedDue !== undefined ? { dueDate: mergedDue } : {})
+                        });
+                    }
+                });
+            }
         }
 
         if (pendingUpdates.size > 0) {
@@ -2223,35 +2436,76 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
         }
 
-        const hasScheduleSeed = hasOwnField(canonicalUpdates, 'startDate') ||
-            hasOwnField(canonicalUpdates, 'dueDate') || pendingUpdates.size > 0;
-        // A non-date edit must not create a derived parent's projection with
-        // no schedule operation to settle it. Keep existing manual-parent
-        // recalculation behavior unchanged.
-        const parentDatesAreDerived = state.allTasks.find(candidate => candidate.id === task.parentId)?.datesDerived;
-        if (!isContextChange && (hasScheduleSeed || !parentDatesAreDerived)) {
+        const anyContextChange = preparedUpdates.some(p =>
+            hasOwnField(p.canonicalUpdates, 'projectId') || hasOwnField(p.canonicalUpdates, 'trackerId')
+        );
+
+        const hasScheduleSeed = preparedUpdates.some(p =>
+            hasOwnField(p.canonicalUpdates, 'startDate') || hasOwnField(p.canonicalUpdates, 'dueDate')
+        ) || pendingUpdates.size > 0;
+
+        const anyParentDatesDerived = preparedUpdates.some(p => {
+            return p.task.parentId ? taskById.get(p.task.parentId)?.datesDerived : false;
+        });
+
+        if (!anyContextChange && (hasScheduleSeed || !anyParentDatesDerived)) {
             const cascadingUpdates = resolveCascadingScheduleUpdates(
                 currentTasks,
                 effectiveRelations,
-                [id, ...pendingUpdates.keys()],
-                useUIStore.getState().autoScheduleMoveMode !== AutoScheduleMoveMode.Off
+                [...preparedUpdates.map(p => p.task.id), ...pendingUpdates.keys()],
+                autoScheduleMoveMode !== AutoScheduleMoveMode.Off,
+                cohortSet
             );
             if (cascadingUpdates.error) {
-                useUIStore.getState().addNotification(cascadingUpdates.error, 'error');
+                outcome = 'rejected';
+                notifyDragError(cascadingUpdates.error, barOperationId);
                 return state;
             }
             currentTasks = cascadingUpdates.tasks;
             cascadingUpdates.updates.forEach((patch, taskId) => pendingUpdates.set(taskId, patch));
         }
 
-        const changedTaskIds = new Set([id, ...pendingUpdates.keys()]);
+        // A cohort is excluded from cascade updates to prevent double movement. Check
+        // every final edge separately, including edges between selected tasks.
+        if (cohortTaskIds && cohortTaskIds.size > 1 && autoScheduleMoveMode !== AutoScheduleMoveMode.Off) {
+            const edges = buildSchedulingEdges(effectiveRelations);
+            const cycleTaskIds = detectSchedulingCycleTaskIds(edges);
+            if ([...cohortTaskIds].some(id => cycleTaskIds.has(id))) {
+                outcome = 'rejected';
+                notifyDragError(i18n.t('label_scheduling_state_cyclic') || 'This task participates in a dependency cycle.', barOperationId);
+                return state;
+            }
+            const candidateById = new Map(currentTasks.map(task => [task.id, task]));
+            const violation = (predecessor: Task | undefined, successor: Task | undefined, gapDays: number): number => {
+                if (!predecessor || !successor || !Number.isFinite(predecessor.startDate) || !Number.isFinite(predecessor.dueDate) ||
+                    !Number.isFinite(successor.startDate) || !Number.isFinite(successor.dueDate) ||
+                    predecessor.startDate! > predecessor.dueDate! || successor.startDate! > successor.dueDate!) return 0;
+                return Math.max(0, addWorkingDays(predecessor.dueDate!, gapDays, successor.projectId) - successor.startDate!);
+            };
+            const worsened = edges.some(edge => {
+                const before = violation(taskById.get(edge.predecessorId), taskById.get(edge.successorId), edge.gapDays);
+                const after = violation(candidateById.get(edge.predecessorId), candidateById.get(edge.successorId), edge.gapDays);
+                return after > before;
+            });
+            if (worsened) {
+                outcome = 'rejected';
+                notifyDragError(
+                    i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.', barOperationId
+                );
+                return state;
+            }
+        }
+
+        outcome = 'applied';
+        const changedTaskIds = new Set([...preparedUpdates.map(p => p.task.id), ...pendingUpdates.keys()]);
         const finalTaskById = new Map<string, Task>();
         const taskChanges: Array<[Task, Task]> = [];
         const finalTasks = state.allTasks.map(t => {
-            if (t.id === id) {
-                finalTaskById.set(t.id, updatedTask);
-                taskChanges.push([t, updatedTask]);
-                return updatedTask;
+            if (updatedTaskById.has(t.id)) {
+                const nextTask = updatedTaskById.get(t.id)!;
+                finalTaskById.set(t.id, nextTask);
+                taskChanges.push([t, nextTask]);
+                return nextTask;
             }
             if (pendingUpdates.has(t.id)) {
                 const nextTask = { ...t, ...pendingUpdates.get(t.id) };
@@ -2266,18 +2520,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
             state.barOperations,
             state.allTasks,
             state.editGenerations,
-            state.activeBarOperationId,
-            [id, ...pendingUpdates.keys()]
+            barOperationId === state.activeBarOperationId ? barOperationId : null,
+            changedTaskIds
         );
 
-
-
-        // Add modified task IDs
         const newModifiedIds = new Set(state.modifiedTaskIds);
         const nextEditGenerations = { ...state.editGenerations };
-        [id, ...pendingUpdates.keys()].forEach((taskId) => {
+        changedTaskIds.forEach((taskId) => {
             nextEditGenerations[taskId] = (nextEditGenerations[taskId] ?? 0) + 1;
         });
+
         const nextLocalTaskPatches = { ...state.localTaskPatches };
         const patchFor = (
             taskId: string,
@@ -2303,6 +2555,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     mutationIntent: persistenceIntent,
                     generation,
                     operationId,
+                    ...(barOperationId && barOperationId === state.activeBarOperationId ? { barOperationId } : {}),
                     ...(hasDateMutation && mutationDatePlacementMode
                         ? { mutationContext: { datePlacementMode: mutationDatePlacementMode } }
                         : {})
@@ -2310,16 +2563,24 @@ export const useTaskStore = create<TaskState>((set, get) => {
             ];
             if (Object.keys(persistenceIntent).length > 0) newModifiedIds.add(taskId);
         };
-        patchFor(id, canonicalUpdates, canonicalMutationIntent, capturedDatePlacementMode);
+
+        for (const prepared of preparedUpdates) {
+            patchFor(prepared.task.id, prepared.canonicalUpdates, prepared.canonicalMutationIntent, prepared.capturedDatePlacementMode);
+        }
+
         pendingUpdates.forEach((fields, taskId) => {
-            const affectedTask = state.allTasks.find(candidate => candidate.id === taskId);
+            const affectedTask = taskById.get(taskId);
             const mutationIntent = affectedTask?.datesDerived
                 ? Object.fromEntries(Object.entries(fields).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
                 : fields;
             patchFor(taskId, fields, mutationIntent);
         });
 
-        const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
+        const changedFields = new Set([
+            ...preparedUpdates.flatMap(p => Object.keys(p.canonicalUpdates)),
+            ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))
+        ]);
+
         const requiresLayout = taskFieldsAffectLayout(state, changedFields, {
             projectName: changedFields.has('projectName') && taskChanges.some(([previousTask, updatedTask]) => (
                 previousTask.projectName !== updatedTask.projectName
@@ -2338,7 +2599,6 @@ export const useTaskStore = create<TaskState>((set, get) => {
             };
 
         if (state.isSortingSuspended) {
-            // Just update the view 'tasks' without re-layout (preserving order)
             const newViewTasks = state.tasks.map(viewTask => {
                 if (!changedTaskIds.has(viewTask.id)) return viewTask;
                 const updatedTask = finalTaskById.get(viewTask.id);
@@ -2349,7 +2609,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 allTasks: finalTasks,
                 tasks: newViewTasks,
                 ...nextSchedulingSummary,
-                modifiedTaskIds: newModifiedIds, // Add here for suspended case
+                modifiedTaskIds: newModifiedIds,
                 editGenerations: nextEditGenerations,
                 localTaskPatches: nextLocalTaskPatches,
                 barOperations
@@ -2381,12 +2641,18 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return {
             allTasks: finalTasks,
             ...toDerivedTaskStatePatch(derived),
-            modifiedTaskIds: newModifiedIds, // Add here for normal case
+            modifiedTaskIds: newModifiedIds,
             editGenerations: nextEditGenerations,
             localTaskPatches: nextLocalTaskPatches,
             barOperations
         };
-    }),
+        });
+        return outcome;
+    },
+
+    updateTask: (id, updates, mutationIntent = updates, datePlacementMode, barOperationId) => {
+        get().updateTasks([{ id, updates, mutationIntent, datePlacementMode }], undefined, barOperationId);
+    },
 
     setTaskLockVersion: (id, lockVersion) => set((state) => {
         const currentLockVersion = state.allTasks.find(task => task.id === id)?.lockVersion ?? 0;
@@ -3377,6 +3643,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 targetRowIndex: focusedTask.rowIndex
             }),
             selectedTaskId: taskId,
+            selectedTaskIds: [taskId],
+            selectionAnchorId: taskId,
             selectedRelationId: null,
             draftRelation: null,
             contextMenu: null
@@ -3548,6 +3816,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         const operation = (async () => {
             while (true) {
+                // Never capture provisional bar patches, including on the next
+                // iteration of a save that started before this drag.
+                while (get().activeBarOperationId) {
+                    await new Promise<void>((resolve) => {
+                        const unsubscribe = useTaskStore.subscribe((state) => {
+                            if (state.activeBarOperationId) return;
+                            unsubscribe();
+                            resolve();
+                        });
+                    });
+                }
                 const snapshot = get();
                 if (snapshot.modifiedTaskIds.size === 0 && !hasPendingRelationChanges(snapshot.pendingRelationChanges)) return new Map<string, string>();
                 relationWorkCaptured = relationWorkCaptured || hasPendingRelationChanges(snapshot.pendingRelationChanges);

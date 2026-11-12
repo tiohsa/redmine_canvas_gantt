@@ -266,7 +266,8 @@ export const deriveSchedulingStates = (tasks: Task[], relations: Relation[]): Re
 export const recalculateDownstreamTasks = (
     tasks: Task[],
     relations: Relation[],
-    originTaskId: string
+    originTaskId: string,
+    ignoredTaskIds?: Set<string>
 ): Map<string, Partial<Task>> => {
     const taskById = new Map(tasks.map((task) => [task.id, { ...task }]));
     const outgoing = new Map<string, SchedulingEdge[]>();
@@ -293,6 +294,7 @@ export const recalculateDownstreamTasks = (
         (outgoing.get(predecessorId) ?? []).forEach((edge) => {
             const successor = taskById.get(edge.successorId);
             if (!successor || successor.datesDerived || !hasValidDateRange(successor)) return;
+            if (ignoredTaskIds?.has(successor.id)) return;
             const successorStartDate = successor.startDate!;
             const successorDueDate = successor.dueDate!;
             const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, successor.projectId);
@@ -332,7 +334,10 @@ export const calculateLinkedDownstreamUpdates = (
     relations: Relation[],
     originTaskId: string,
     previousDueDate: number | undefined,
-    nextDueDate: number | undefined
+    nextDueDate: number | undefined,
+    ignoredTaskIds?: Set<string>,
+    // Callers deferring dependency checks must validate the merged final graph.
+    deferDependencyValidation = false
 ): { updates: Map<string, Partial<Task>>; error?: string } => {
     if (!hasFiniteDate(previousDueDate) || !hasFiniteDate(nextDueDate)) {
         return { updates: new Map() };
@@ -366,6 +371,7 @@ export const calculateLinkedDownstreamUpdates = (
         (outgoing.get(predecessorId) ?? []).forEach((edge) => {
             const successor = taskById.get(edge.successorId);
             if (!successor || successor.datesDerived || !hasValidDateRange(successor) || clusterTaskIds.has(successor.id)) return;
+            if (ignoredTaskIds?.has(successor.id)) return;
 
             clusterTaskIds.add(successor.id);
             queue.push(successor.id);
@@ -383,6 +389,15 @@ export const calculateLinkedDownstreamUpdates = (
         });
     });
 
+    for (const shifted of updates.values()) {
+        if (!hasFiniteDate(shifted.startDate) || !hasFiniteDate(shifted.dueDate) || shifted.startDate > shifted.dueDate) {
+            return {
+                updates: new Map(),
+                error: i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.'
+            };
+        }
+    }
+
     for (const edge of edges) {
         if (!clusterTaskIds.has(edge.successorId)) continue;
 
@@ -396,16 +411,9 @@ export const calculateLinkedDownstreamUpdates = (
         if (predecessor.datesDerived || !hasValidDateRange(predecessor)) continue;
 
         const shiftedStartDate = shiftedSuccessor.startDate;
-        const shiftedDueDate = shiftedSuccessor.dueDate;
-        if (!hasFiniteDate(shiftedStartDate) || !hasFiniteDate(shiftedDueDate) || shiftedStartDate > shiftedDueDate) {
-            return {
-                updates: new Map(),
-                error: i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.'
-            };
-        }
-
+        if (deferDependencyValidation) continue;
         const minimumSuccessorStart = addWorkingDays(predecessor.dueDate!, edge.gapDays, successor.projectId);
-        if (shiftedStartDate < minimumSuccessorStart) {
+        if (shiftedStartDate! < minimumSuccessorStart) {
             return {
                 updates: new Map(),
                 error: i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.'

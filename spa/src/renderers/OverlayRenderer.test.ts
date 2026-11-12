@@ -92,6 +92,40 @@ describe('OverlayRenderer selection highlight', () => {
 
         expect(ctx.strokeRect).toHaveBeenCalledTimes(visible ? 1 : 0);
     });
+
+    it('draws highlights for all visible selected tasks and calls ctx.save()/ctx.restore() when selectedTaskIds has multiple tasks', () => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 1000,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+
+        const t1 = buildTask('1', 0, ONE_DAY, 0);
+        const t2 = buildTask('2', 0, ONE_DAY, 1);
+        const t3 = buildTask('3', 0, ONE_DAY, 2);
+        const tOffscreen = buildTask('offscreen', 0, ONE_DAY, 100);
+
+        useUIStore.setState({ showProgressLine: false });
+
+        renderer.render({
+            viewport,
+            tasks: [t1, t2, t3, tOffscreen],
+            relations: [],
+            rowCount: 4,
+            zoomLevel: 2,
+            selectedTaskId: null,
+            selectedTaskIds: ['1', '3', 'offscreen'],
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        // '1' and '3' are visible; '2' is not selected; 'offscreen' (rowIndex 100) is outside visible rows
+        expect(ctx.strokeRect).toHaveBeenCalledTimes(2);
+        expect(ctx.save).toHaveBeenCalledTimes(2);
+        expect(ctx.restore).toHaveBeenCalledTimes(2);
+    });
 });
 
 describe('OverlayRenderer progress line', () => {

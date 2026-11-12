@@ -171,6 +171,8 @@ ja:
     notice_unassigned_filter_omitted_in_redmine_url: "担当者なしのフィルタは Redmine URL エクスポートでは他の担当者と組み合わせて指定できないため除外されました。"
     notice_no_version_filter_omitted_in_redmine_url: "バージョンなしのフィルタは Redmine URL エクスポートではサポートされていないため除外されました。"
     label_cannot_move_parent_task: "親タスクは直接移動できません。子タスクを移動してください。"
+    label_cannot_move_selected_tasks: "選択されたタスクに編集不可または日付未設定のものがあるため、移動できません。"
+    label_moving_selected_tasks: "選択した%{count}件のタスクを移動します。"
     label_selected_task_is_hidden: "選択されたタスクは現在のフィルタによって非表示になっています。"
     label_task_details_for: "%{subject} の詳細"
     label_bulk_subtask_count_success: "%{count} 件のチケットを作成しました。"

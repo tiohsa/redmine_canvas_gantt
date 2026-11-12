@@ -40,6 +40,7 @@ export type LocalPatch<T extends { id: string }> = {
     mutationIntent: Partial<T>;
     generation: number;
     operationId: string;
+    barOperationId?: string;
     mutationContext?: MutationContext;
 };
 

@@ -21,6 +21,7 @@ export type OverlayRenderState = {
     rowCount: number;
     zoomLevel: ZoomLevel;
     selectedTaskId: string | null;
+    selectedTaskIds?: string[];
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
     pendingRelationIds?: ReadonlySet<string>;
@@ -45,6 +46,7 @@ export class OverlayRenderer {
         rowCount,
         zoomLevel,
         selectedTaskId,
+        selectedTaskIds,
         selectedRelationId,
         draftRelation,
         pendingRelationIds,
@@ -87,10 +89,16 @@ export class OverlayRenderer {
         }
 
         // Draw selection highlight
-        if (selectedTaskId) {
-            const selectedTask = visibleTasks.find(t => t.id === selectedTaskId);
-            if (selectedTask) {
-                this.drawSelectionHighlight(ctx, viewport, selectedTask, zoomLevel);
+        const selectionIds = selectedTaskIds && selectedTaskIds.length > 0
+            ? selectedTaskIds
+            : (selectedTaskId ? [selectedTaskId] : []);
+
+        if (selectionIds.length > 0) {
+            const selectionSet = new Set(selectionIds);
+            for (const task of visibleTasks) {
+                if (selectionSet.has(task.id)) {
+                    this.drawSelectionHighlight(ctx, viewport, task, zoomLevel);
+                }
             }
         }
 
@@ -280,11 +288,13 @@ export class OverlayRenderer {
     private drawSelectionHighlight(ctx: CanvasRenderingContext2D, viewport: Viewport, task: Task, zoomLevel: ZoomLevel) {
         const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
 
+        ctx.save();
         ctx.strokeStyle = '#ff9800';
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 2]);
         ctx.strokeRect(bounds.x - 2, bounds.y - 2, bounds.width + 4, bounds.height + 4);
         ctx.setLineDash([]);
+        ctx.restore();
     }
 
     private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number, today: CalendarDate = todayCalendarDate()) {

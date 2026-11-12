@@ -211,7 +211,7 @@ describe('schedule conflict group resolution', () => {
     it('keeps drafts and operation ownership when the review is unavailable', async () => {
         setup();
         const operation = useTaskStore.getState().beginBarOperation('A');
-        useTaskStore.getState().updateTask('A', { dueDate: date(6) });
+        useTaskStore.getState().updateTask('A', { dueDate: date(6) }, undefined, undefined, operation);
         useTaskStore.getState().endBarOperation(operation);
         const before = useTaskStore.getState();
         api.mockResolvedValueOnce({ status: 'not_found', operationId: 'review', entities: [], revisions: {}, errors: ['Scope unavailable'] });
@@ -223,7 +223,7 @@ describe('schedule conflict group resolution', () => {
     it('settles only reviewed ownership and keeps an operation created while applying', async () => {
         setup();
         const operation = useTaskStore.getState().beginBarOperation('B');
-        useTaskStore.getState().updateTask('B', { startDate: date(12), dueDate: date(13) });
+        useTaskStore.getState().updateTask('B', { startDate: date(12), dueDate: date(13) }, undefined, undefined, operation);
         useTaskStore.getState().endBarOperation(operation);
         const generation = useTaskStore.getState().editGenerations.B;
         useTaskStore.getState().registerTaskConflict('B', 'Conflict', generation, task('B', 6, 7), 2);
@@ -233,7 +233,7 @@ describe('schedule conflict group resolution', () => {
         api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
         const applying = useTaskStore.getState().applyScheduleConflict('A');
         const later = useTaskStore.getState().beginBarOperation('B');
-        useTaskStore.getState().updateTask('B', { subject: 'Later edit' });
+        useTaskStore.getState().updateTask('B', { subject: 'Later edit' }, undefined, undefined, later);
         useTaskStore.getState().endBarOperation(later);
         finish({ status: 'ok', operationId: 'apply', entities: [task('A', 4, 5), { ...task('B', 12, 13), lockVersion: 3 }], revisions: { A: 2, B: 3 } });
         await applying;

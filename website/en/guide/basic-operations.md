@@ -28,6 +28,16 @@ With **Snap to working days** selected under **Manual scheduling**, non-working 
 
 <video controls preload="metadata" playsinline poster="/images/schedule-edit-poster.png" src="/videos/schedule-edit.mp4" style="width:100%;height:auto" aria-label="moving and resizing a task bar to change its dates"></video>
 
+::: warning Development version
+The following group-drag behavior is under development and is not part of the documented 0.19.0 release. Select multiple issue rows with Ctrl / Cmd or Shift, then drag a selected bar. Only selected rows currently visible in the chart are included. Selected parents are excluded from the move; select the child issues you want to move. You can drag a selected parent bar to move the selected eligible issues, but unselected descendants are not added. A parent-only selection cannot move. The move is stopped if a selected visible non-parent issue is not editable, has derived dates, or has no dates. Right-clicking an issue selects only that issue and opens its menu; right-clicking blank chart or sidebar space clears a multiple selection. With automatic scheduling enabled, a move that introduces or worsens a dependency violation may be rejected. If a grouped schedule save fails, unconfirmed changes belonging to that drag are rolled back; separate issue edits are not part of the same transaction.
+
+If the final drag position is invalid, the entire drag is canceled. Pressing Escape or moving focus away from the window also cancels a drag in progress. A save requested during a drag waits until the drag finishes or is canceled; canceling the drag does not undo changes already saved.
+
+In the development version, both single and group bar moves in working-day mode convert the movement into a working-day count using the grabbed issue. The same count is applied to every selected issue using its project calendar, preserving working-day duration. Dates aligned under the same calendar remain aligned; different project calendars may produce different dates. Issues with only a start or due date retain the missing endpoint.
+:::
+
+In the development version, clicking the body of a selected bar without modifier keys and releasing without moving selects only that issue. This also works when the selection contains issues that cannot move or consists only of parents. Dragging a selection that cannot move preserves its dates and multiple selection.
+
 ## Edit a cell
 
 1. Show the column you want from the column menu.

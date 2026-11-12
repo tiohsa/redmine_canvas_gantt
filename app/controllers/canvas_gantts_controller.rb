@@ -185,6 +185,8 @@ class CanvasGanttsController < ApplicationController
     notice_unassigned_filter_omitted_in_redmine_url: :notice_unassigned_filter_omitted_in_redmine_url,
     notice_no_version_filter_omitted_in_redmine_url: :notice_no_version_filter_omitted_in_redmine_url,
     label_cannot_move_parent_task: :label_cannot_move_parent_task,
+    label_cannot_move_selected_tasks: :label_cannot_move_selected_tasks,
+    label_moving_selected_tasks: :label_moving_selected_tasks,
     label_selected_task_is_hidden: :label_selected_task_is_hidden,
     label_task_details_for: :label_task_details_for,
     label_bulk_subtask_count_success: :label_bulk_subtask_count_success,

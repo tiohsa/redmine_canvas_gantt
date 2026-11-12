@@ -1,5 +1,5 @@
 import type { Task } from '../../types';
-import { applyLocalPatches, hasLocalMutationIntent, type LocalPatch } from './stateContract';
+import { applyLocalPatches, hasLocalMutationIntent, type LocalPatch, type ServerSnapshot } from './stateContract';
 
 export type BarOperationRecord = {
     operationId: string;
@@ -21,6 +21,7 @@ export type BarOperationState = {
 
 type BarOperationRollbackState = BarOperationState & {
     allTasks: Task[];
+    serverTaskSnapshot?: ServerSnapshot<Task>;
     editGenerations: Record<string, number>;
     localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
     modifiedTaskIds: Set<string>;
@@ -36,16 +37,17 @@ export const beginBarOperation = (
     tasks: Task[],
     editGenerations: Record<string, number>,
     operationId: string,
-    seedTaskId?: string
+    seedTaskId?: string | string[]
 ): BarOperationState => {
-    const seedTask = seedTaskId ? tasks.find(task => task.id === seedTaskId) : undefined;
+    const seedIds = Array.isArray(seedTaskId) ? seedTaskId : (seedTaskId ? [seedTaskId] : []);
+    const seedTasks = seedIds.length > 0 ? tasks.filter(task => seedIds.includes(task.id)) : [];
     return {
         barOperations: {
             ...operations,
             [operationId]: {
                 operationId,
-                baselineAllTasks: seedTask ? [{ ...seedTask }] : [],
-                baselineGenerations: seedTask ? { [seedTask.id]: editGenerations[seedTask.id] ?? 0 } : {},
+                baselineAllTasks: seedTasks.map(task => ({ ...task })),
+                baselineGenerations: Object.fromEntries(seedTasks.map(task => [task.id, editGenerations[task.id] ?? 0])),
                 entityGenerations: {},
                 completedTaskIds: []
             }
@@ -59,15 +61,20 @@ export const endBarOperation = (
     activeBarOperationId: string | null,
     tasks: Task[],
     editGenerations: Record<string, number>,
-    operationId: string
+    operationId: string,
+    localTaskPatches?: Record<string, Array<LocalPatch<Task>>>
 ): BarOperationState => {
     const operation = operations[operationId];
-    if (!operation) return { barOperations: operations, activeBarOperationId };
+    if (!operation) return { barOperations: operations, activeBarOperationId: activeBarOperationId === operationId ? null : activeBarOperationId };
 
     const entityGenerations = Object.fromEntries(
         tasks
-            .filter(task => (editGenerations[task.id] ?? 0) > (operation.baselineGenerations[task.id] ?? 0))
-            .map(task => [task.id, editGenerations[task.id]])
+            .filter(task => Object.prototype.hasOwnProperty.call(operation.baselineGenerations, task.id) &&
+                (editGenerations[task.id] ?? 0) > operation.baselineGenerations[task.id] &&
+                (!localTaskPatches || (localTaskPatches[task.id] ?? []).some(patch => patch.barOperationId === operationId)))
+            .map(task => [task.id, localTaskPatches
+                ? Math.max(...(localTaskPatches[task.id] ?? []).filter(patch => patch.barOperationId === operationId).map(patch => patch.generation))
+                : editGenerations[task.id]])
     ) as Record<string, number>;
     const barOperations = { ...operations };
     if (Object.keys(entityGenerations).length === 0) {
@@ -121,9 +128,7 @@ export const settleBarOperationTaskOwnership = (
 
     return {
         barOperations,
-        activeBarOperationId: activeBarOperationId !== null && matchingOperations.some(([operationId]) => operationId === activeBarOperationId)
-            ? null
-            : activeBarOperationId
+        activeBarOperationId
     };
 };
 
@@ -159,29 +164,50 @@ export const buildBarOperationRollback = (
     if (!operation) return null;
 
     const baselineById = new Map(operation.baselineAllTasks.map(task => [task.id, task]));
+    // Active operations have not yet recorded their final entity generations.
+    const generations = { ...operation.entityGenerations };
+    if (state.activeBarOperationId === operationId) {
+        Object.entries(state.localTaskPatches).forEach(([taskId, patches]) => {
+            const owned = patches.filter(patch => patch.barOperationId === operationId);
+            if (owned.length) generations[taskId] = Math.max(...owned.map(patch => patch.generation));
+        });
+    }
     const rollbackIds = new Set(
-        Object.entries(operation.entityGenerations)
+        Object.entries(generations)
             .filter(([taskId, generation]) => (
                 (state.editGenerations[taskId] ?? 0) >= generation &&
                 !operation.completedTaskIds.includes(taskId) &&
-                (state.localTaskPatches[taskId] ?? []).some(patch => patch.generation === generation)
+                (state.localTaskPatches[taskId] ?? []).some(patch => patch.barOperationId === operationId)
             ))
             .map(([taskId]) => taskId)
     );
     const allTasks = state.allTasks.map(task => {
         const baseline = baselineById.get(task.id);
         if (!rollbackIds.has(task.id) || !baseline) return task;
-        const operationGeneration = operation.entityGenerations[task.id];
-        const laterPatches = (state.localTaskPatches[task.id] ?? []).filter(
-            patch => patch.generation > operationGeneration
+        const remainingPatches = (state.localTaskPatches[task.id] ?? []).filter(
+            patch => patch.barOperationId !== operationId
         );
-        return applyLocalPatches(baseline, laterPatches);
+        const serverTask = state.serverTaskSnapshot?.entitiesById[task.id];
+        if (serverTask) return applyLocalPatches(serverTask, remainingPatches);
+
+        // Some callers have no server snapshot. Restore only drag-owned fields
+        // while retaining unrelated fields from the current task.
+        const restored = { ...task };
+        (state.localTaskPatches[task.id] ?? [])
+            .filter(patch => patch.barOperationId === operationId)
+            .forEach(patch => {
+                Object.keys(patch.projection).forEach(field => {
+                    if (field === 'id' || field === 'lockVersion') return;
+                    Object.assign(restored, { [field]: baseline[field as keyof Task] });
+                });
+            });
+        return applyLocalPatches(restored, remainingPatches);
     });
     const localTaskPatches = { ...state.localTaskPatches };
     const modifiedTaskIds = new Set(state.modifiedTaskIds);
     rollbackIds.forEach((taskId) => {
         localTaskPatches[taskId] = (localTaskPatches[taskId] ?? []).filter(
-            patch => patch.generation !== operation.entityGenerations[taskId]
+            patch => patch.barOperationId !== operationId
         );
         if (localTaskPatches[taskId].length === 0) {
             delete localTaskPatches[taskId];

@@ -171,6 +171,8 @@ en:
     notice_unassigned_filter_omitted_in_redmine_url: "Unassigned assignee filter was omitted because Redmine URL export cannot combine it with specific assignees."
     notice_no_version_filter_omitted_in_redmine_url: "No-version filter was omitted because Redmine URL export only supports explicit version IDs."
     label_cannot_move_parent_task: "Cannot move parent task. Move child tasks instead."
+    label_cannot_move_selected_tasks: "Cannot move the selection: some tasks are not editable or have no dates."
+    label_moving_selected_tasks: "Moving %{count} selected tasks."
     label_selected_task_is_hidden: "Selected task is hidden by the current filters."
     label_task_details_for: "Details for: %{subject}"
     label_bulk_subtask_count_success: "%{count} tasks created."

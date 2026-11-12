@@ -241,6 +241,26 @@ export const replaceIssueQueryParamsInUrl = (state: ResolvedQueryState, queryCon
     replaceBrowserUrl(nextUrl);
 };
 
+const parseSelectedAssigneeIds = (value: unknown): (number | null)[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+
+    return Array.from(new Set(value.flatMap((entry) => {
+        if (entry === null || entry === 'none' || entry === '_none') return [null];
+        const parsed = Number(entry);
+        return Number.isFinite(parsed) ? [parsed] : [];
+    })));
+};
+
+const parseSelectedVersionIds = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+
+    return Array.from(new Set(value.flatMap((entry) => {
+        const normalized = String(entry);
+        if (normalized === 'none' || normalized === '_none') return ['_none'];
+        return normalized.match(/^-?\d+$/) ? [normalized] : [];
+    })));
+};
+
 export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | undefined => {
     if (!value || typeof value !== 'object') return undefined;
     const record = value as Record<string, unknown>;
@@ -259,23 +279,11 @@ export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | un
         selectedStatusIds: Array.isArray(record.selected_status_ids)
             ? record.selected_status_ids.map((entry) => Number(entry)).filter(Number.isFinite)
             : undefined,
-        selectedAssigneeIds: Array.isArray(record.selected_assignee_ids)
-            ? Array.from(new Set(record.selected_assignee_ids.flatMap((entry) => {
-                if (entry === null || entry === 'none' || entry === '_none') return [null];
-                const parsed = Number(entry);
-                return Number.isFinite(parsed) ? [parsed] : [];
-            })))
-            : undefined,
+        selectedAssigneeIds: parseSelectedAssigneeIds(record.selected_assignee_ids),
         canvasProjectIds: Array.isArray(record.selected_project_ids)
             ? record.selected_project_ids.map((entry) => String(entry))
             : undefined,
-        selectedVersionIds: Array.isArray(record.selected_version_ids)
-            ? Array.from(new Set(record.selected_version_ids.flatMap((entry) => {
-                const normalized = String(entry);
-                if (normalized === 'none' || normalized === '_none') return ['_none'];
-                return normalized.match(/^-?\d+$/) ? [normalized] : [];
-            })))
-            : undefined,
+        selectedVersionIds: parseSelectedVersionIds(record.selected_version_ids),
         ...(Array.isArray(record.selected_tracker_ids)
             ? { selectedTrackerIds: record.selected_tracker_ids.map((entry) => Number(entry)).filter(Number.isFinite) }
             : {}),

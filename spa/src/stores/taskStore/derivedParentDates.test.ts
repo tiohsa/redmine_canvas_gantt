@@ -36,9 +36,35 @@ describe('derived parent schedule persistence', () => {
         useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
     });
 
+    it.each(['single', 'cohort'] as const)('rejects a %s child move that would write a non-editable manually dated parent', async mode => {
+        const p = task('parent', { datesDerived: false, editable: false, hasChildren: true });
+        const child = task('child', { parentId: p.id });
+        const other = task('other');
+        useTaskStore.getState().applyApiData(data([p, child, other]));
+        useTaskStore.setState({ autoSave: false });
+        const before = useTaskStore.getState();
+
+        if (mode === 'single') {
+            useTaskStore.getState().updateTask(child.id, { dueDate: date(9) });
+        } else {
+            useTaskStore.getState().updateTasks([
+                { id: child.id, updates: { dueDate: date(9) } },
+                { id: other.id, updates: { dueDate: date(9) } }
+            ], new Set([child.id, other.id]));
+        }
+
+        expect(useTaskStore.getState().allTasks).toEqual(before.allTasks);
+        expect(useTaskStore.getState().localTaskPatches).toEqual(before.localTaskPatches);
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(before.modifiedTaskIds);
+        expect(useTaskStore.getState().editGenerations).toEqual(before.editGenerations);
+        await useTaskStore.getState().saveChanges();
+        expect(apiClient.scheduleMutation).not.toHaveBeenCalled();
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+    });
+
     it.each([false, true])('saves weekend child dates without writing either ancestor, autoSave=%s', async autoSave => {
         const grandparent = task('grandparent', { datesDerived: true, startDate: date(4), dueDate: date(15) });
-        const p = { ...parent(), parentId: grandparent.id };
+        const p = { ...parent(), parentId: grandparent.id, editable: false };
         const child = task('child', { parentId: p.id });
         const savedChild = { ...child, dueDate: date(9), lockVersion: 3 };
         vi.mocked(apiClient.fetchData).mockResolvedValue(data([grandparent, p, savedChild]));

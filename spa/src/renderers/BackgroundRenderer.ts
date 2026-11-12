@@ -12,7 +12,7 @@ export class BackgroundRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: Task[]) {
+    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: Task[], selectedTaskIds?: string[]) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -26,13 +26,14 @@ export class BackgroundRenderer {
         const scales = getGridScales(viewport, zoomLevel);
         const renderedNonWorkingDays = new Set<string>();
 
+        const visibleTasks = tasks.filter((task) => {
+            const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
+            return y + viewport.rowHeight > 0 && y < height;
+        });
+
         // Business calendar background. Ticks use the same local-date semantics as the grid.
         if (zoomLevel === 2) {
             const ticks = scales.bottom;
-            const visibleTasks = tasks.filter((task) => {
-                const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
-                return y + viewport.rowHeight > 0 && y < height;
-            });
             ticks.forEach((tick, i) => {
                 const w = (i < ticks.length - 1)
                     ? ticks[i + 1].x - tick.x
@@ -81,11 +82,15 @@ export class BackgroundRenderer {
         );
 
         // Highlight selected row
-        if (selectedTaskId) {
-            const selectedTask = tasks.find(t => t.id === selectedTaskId);
-            if (selectedTask) {
-                const y = selectedTask.rowIndex * viewport.rowHeight - viewport.scrollY;
-                if (y + viewport.rowHeight > 0 && y < height) {
+        const selectionIds = selectedTaskIds && selectedTaskIds.length > 0
+            ? selectedTaskIds
+            : (selectedTaskId ? [selectedTaskId] : []);
+
+        if (selectionIds.length > 0) {
+            const selectionSet = new Set(selectionIds);
+            for (const task of visibleTasks) {
+                if (selectionSet.has(task.id)) {
+                    const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
                     ctx.fillStyle = designTokens.selectedRow;
                     ctx.fillRect(0, y, width, viewport.rowHeight);
                 }

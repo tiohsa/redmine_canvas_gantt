@@ -27,6 +27,13 @@ const TASK_RESIZE_HANDLE_WIDTH_PX = 8;
 const TASK_RESIZE_OUTSIDE_MARGIN_PX = 6;
 const TASK_MIN_MOVE_REGION_WIDTH_PX = 8;
 
+interface DragCohortMember {
+    id: string;
+    originalStartDate: number | undefined;
+    originalDueDate: number | undefined;
+    projectId?: string;
+}
+
 interface DragState {
     mode: DragMode;
     startX: number;
@@ -34,12 +41,17 @@ interface DragState {
     taskId: string | null;
     originalStartDate: number | undefined;
     originalDueDate: number | undefined;
+    anchorProjectId?: string;
     barOperationId: string | null;
     datePlacementMode: DatePlacementModeValue;
+    cohort?: DragCohortMember[];
+    lastCalendarDayDelta?: number;
+    lastUpdateRejected?: boolean;
 }
 
 export class InteractionEngine {
     private container: HTMLElement;
+    private pendingClick: { taskId: string; startX: number; startY: number } | null = null;
     private drag: DragState = {
         mode: 'none',
         startX: 0,
@@ -82,12 +94,15 @@ export class InteractionEngine {
         this.container.addEventListener('mousedown', this.handleMouseDown);
         window.addEventListener('mousemove', this.handleMouseMove);
         window.addEventListener('mouseup', this.handleMouseUp);
+        window.addEventListener('blur', this.handleCancel);
         this.container.addEventListener('wheel', this.handleWheel, { passive: false });
         this.container.addEventListener('contextmenu', this.handleContextMenu);
         window.addEventListener('keydown', this.handleKeyDown);
     }
 
     public detach() {
+        this.finishDrag(true);
+        window.removeEventListener('blur', this.handleCancel);
         this.container.removeEventListener('mousedown', this.handleMouseDown);
         window.removeEventListener('mousemove', this.handleMouseMove);
         window.removeEventListener('mouseup', this.handleMouseUp);
@@ -220,11 +235,26 @@ export class InteractionEngine {
         if (this.drag.mode === 'pan') return DEFAULT_CURSOR;
 
         if (!hit.task) return DEFAULT_CURSOR;
+        if (hit.region === 'body') {
+            const { tasks, selectedTaskIds } = useTaskStore.getState();
+            const selected = selectedTaskIds.length > 1 && selectedTaskIds.includes(hit.task.id)
+                ? tasks.filter(task => selectedTaskIds.includes(task.id)) : [hit.task];
+            const leaves = selected.filter(task => !task.hasChildren);
+            if (leaves.length > 0 && leaves.every(task => this.isMovableLeaf(task))) {
+                return hit.relation ? 'pointer' : TASK_MOVE_CURSOR;
+            }
+            return hit.task.hasChildren ? TASK_DISABLED_PARENT_CURSOR : DEFAULT_CURSOR;
+        }
         if (hit.task.hasChildren) return TASK_DISABLED_PARENT_CURSOR;
         if (!hit.task.editable) return DEFAULT_CURSOR;
         if (hit.region === 'start' || hit.region === 'end') return TASK_RESIZE_CURSOR;
         if (hit.relation) return 'pointer';
         return TASK_MOVE_CURSOR;
+    }
+
+    private isMovableLeaf(task: Task): boolean {
+        return !task.hasChildren && task.editable && !task.datesDerived &&
+            (Number.isFinite(task.startDate) || Number.isFinite(task.dueDate));
     }
 
     private hitTestRelation(x: number, y: number): Relation | null {
@@ -271,7 +301,8 @@ export class InteractionEngine {
     }
 
     private handleMouseDown = (e: MouseEvent) => {
-        if (e.button === 2) return; // Ignore right-click
+        if (e.button !== 0 || this.drag.mode !== 'none') return;
+        this.pendingClick = null;
         if (this.isScrollInteractionLocked()) return;
 
         // Ignore events from dependency handles (let/leave them for the Overlay handler)
@@ -298,44 +329,98 @@ export class InteractionEngine {
             return;
         }
 
-        if (resolvedHit.task && resolvedHit.task.editable) {
-            // Check if parent task
-            if (resolvedHit.task.hasChildren) {
-                useTaskStore.getState().selectTask(resolvedHit.task.id);
-                // Show warning and return
-                useUIStore.getState().addNotification(i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.', 'warning');
+        if (resolvedHit.task) {
+            if (e.ctrlKey || e.metaKey) {
+                useTaskStore.getState().toggleSelectTask(resolvedHit.task.id);
+                return;
+            } else if (e.shiftKey) {
+                useTaskStore.getState().selectTaskRange(resolvedHit.task.id);
                 return;
             }
 
-            useTaskStore.getState().selectTask(resolvedHit.task.id);
-            // Suspend sorting during interaction
-            useTaskStore.getState().setSortingSuspended(true);
+            if (resolvedHit.region === 'body') {
+                const currentSelected = useTaskStore.getState().selectedTaskIds;
+                if (currentSelected.length > 1 && currentSelected.includes(resolvedHit.task.id)) {
+                    useTaskStore.setState({ selectedTaskId: resolvedHit.task.id });
+                    this.pendingClick = { taskId: resolvedHit.task.id, startX: e.clientX, startY: e.clientY };
+                } else {
+                    useTaskStore.getState().selectTask(resolvedHit.task.id);
+                }
+            } else {
+                useTaskStore.getState().selectTask(resolvedHit.task.id);
+            }
 
             if (resolvedHit.region === 'body') {
+                const selectedTaskIds = new Set(useTaskStore.getState().selectedTaskIds);
+                const selectedTasks = useTaskStore.getState().tasks.filter(t => selectedTaskIds.has(t.id));
+                const leaves = selectedTasks.filter(t => !t.hasChildren);
+                const movableCohort = leaves.filter(t => this.isMovableLeaf(t));
+
+                if (movableCohort.length !== leaves.length || movableCohort.length === 0) {
+                    if (leaves.length === 0 && resolvedHit.task.hasChildren) {
+                        useUIStore.getState().addNotification(
+                            i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.',
+                            'warning'
+                        );
+                    } else {
+                        useUIStore.getState().addNotification(
+                            i18n.t('label_cannot_move_selected_tasks') || 'Cannot move the selection: some tasks are not editable or have no dates.',
+                            'warning'
+                        );
+                    }
+                    return;
+                }
+
+                const grabbedTask = resolvedHit.task;
+                const cohortMembers: DragCohortMember[] = movableCohort.map(t => ({
+                    id: t.id,
+                    originalStartDate: t.startDate,
+                    originalDueDate: t.dueDate,
+                    projectId: t.projectId
+                }));
+
+                if (cohortMembers.length > 1) {
+                    useUIStore.getState().addNotification(
+                        i18n.t('label_moving_selected_tasks', { count: cohortMembers.length }) || `Moving ${cohortMembers.length} selected tasks.`,
+                        'info'
+                    );
+                }
+                useTaskStore.getState().setSortingSuspended(true);
+                const operationId = useTaskStore.getState().beginBarOperation(cohortMembers.map(m => m.id));
+
                 this.drag = {
                     mode: 'task-move',
                     startX: e.clientX,
                     startY: e.clientY,
-                    taskId: resolvedHit.task.id,
-                    originalStartDate: resolvedHit.task.startDate,
-                    originalDueDate: resolvedHit.task.dueDate,
-                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id),
-                    datePlacementMode: useUIStore.getState().datePlacementMode
+                    taskId: grabbedTask.id,
+                    originalStartDate: grabbedTask.startDate,
+                    originalDueDate: grabbedTask.dueDate,
+                    anchorProjectId: grabbedTask.projectId,
+                    barOperationId: operationId,
+                    datePlacementMode: useUIStore.getState().datePlacementMode,
+                    cohort: cohortMembers,
+                    lastCalendarDayDelta: 0
                 };
-            } else if (resolvedHit.region === 'start') {
+            } else if (resolvedHit.region === 'start' || resolvedHit.region === 'end') {
+                if (resolvedHit.task.hasChildren) {
+                    useUIStore.getState().addNotification(
+                        i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.',
+                        'warning'
+                    );
+                    return;
+                }
+                if (!resolvedHit.task.editable) {
+                    useUIStore.getState().addNotification(
+                        i18n.t('label_cannot_move_selected_tasks') || 'Cannot move the selection: some tasks are not editable or have no dates.',
+                        'warning'
+                    );
+                    return;
+                }
+
+                useTaskStore.getState().setSortingSuspended(true);
+                const mode: DragMode = resolvedHit.region === 'start' ? 'task-resize-start' : 'task-resize-end';
                 this.drag = {
-                    mode: 'task-resize-start',
-                    startX: e.clientX,
-                    startY: e.clientY,
-                    taskId: resolvedHit.task.id,
-                    originalStartDate: resolvedHit.task.startDate,
-                    originalDueDate: resolvedHit.task.dueDate,
-                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id),
-                    datePlacementMode: useUIStore.getState().datePlacementMode
-                };
-            } else if (resolvedHit.region === 'end') {
-                this.drag = {
-                    mode: 'task-resize-end',
+                    mode,
                     startX: e.clientX,
                     startY: e.clientY,
                     taskId: resolvedHit.task.id,
@@ -345,9 +430,6 @@ export class InteractionEngine {
                     datePlacementMode: useUIStore.getState().datePlacementMode
                 };
             }
-        } else if (resolvedHit.task) {
-            // Not editable, just select
-            useTaskStore.getState().selectTask(resolvedHit.task.id);
         } else {
             // No task hit - start panning
             useTaskStore.getState().selectTask(null);
@@ -365,7 +447,15 @@ export class InteractionEngine {
     };
 
     private handleMouseMove = (e: MouseEvent) => {
-        const { viewport, updateTask, setHoveredTask } = useTaskStore.getState();
+        if (this.pendingClick && Math.hypot(e.clientX - this.pendingClick.startX, e.clientY - this.pendingClick.startY) >= 3) {
+            this.pendingClick = null;
+        }
+        const { viewport, updateTasks, setHoveredTask } = useTaskStore.getState();
+        const updateDragTask = (updates: Partial<Task>) => {
+            this.drag.lastUpdateRejected = updateTasks([{
+                id: this.drag.taskId!, updates, datePlacementMode: this.drag.datePlacementMode
+            }], undefined, this.drag.barOperationId) === 'rejected';
+        };
 
         // Hover logic (only update when not dragging a task)
         const rect = this.container.getBoundingClientRect();
@@ -421,54 +511,92 @@ export class InteractionEngine {
             this.drag.startY = e.clientY;
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-            const projectId = currentTask?.projectId;
             const datePlacementMode = this.drag.datePlacementMode;
+            let calendarDayDelta = 0;
 
-            if (Number.isFinite(this.drag.originalStartDate) && Number.isFinite(this.drag.originalDueDate)) {
+            if (Number.isFinite(this.drag.originalStartDate)) {
                 const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-                const newStart = datePlacementMode === DatePlacementMode.CalendarDays
-                    ? candidateStart
-                    : normalizeWorkingDate(candidateStart, 'forward', projectId);
-                const newDue = datePlacementMode === DatePlacementMode.CalendarDays
-                    ? addCalendarDays(
-                        this.drag.originalDueDate!,
-                        diffCalendarDays(this.drag.originalStartDate!, candidateStart)
-                    )
-                    : shiftByWorkingDays(
-                        newStart,
-                        diffWorkingDays(this.drag.originalStartDate!, this.drag.originalDueDate!, projectId),
-                        projectId
-                    );
-
-                if (currentTask && currentTask.startDate !== newStart) {
-                    updateTask(this.drag.taskId, {
-                        startDate: newStart,
-                        dueDate: newDue
-                    }, undefined, datePlacementMode);
-                }
-            } else if (Number.isFinite(this.drag.originalStartDate)) {
-                const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-                const newStart = datePlacementMode === DatePlacementMode.CalendarDays
-                    ? candidateStart
-                    : normalizeWorkingDate(candidateStart, 'forward', projectId);
-                if (currentTask && currentTask.startDate !== newStart) {
-                    updateTask(this.drag.taskId, {
-                        startDate: newStart
-                    }, undefined, datePlacementMode);
-                }
+                calendarDayDelta = diffCalendarDays(this.drag.originalStartDate!, candidateStart);
             } else if (Number.isFinite(this.drag.originalDueDate)) {
-                // Determine delta based on drag start
                 const candidateDue = this.snapToDate(this.drag.originalDueDate! + timeDelta);
-                const newDue = datePlacementMode === DatePlacementMode.CalendarDays
-                    ? candidateDue
-                    : normalizeWorkingDate(candidateDue, 'backward', projectId);
-                if (currentTask && currentTask.dueDate !== newDue) {
-                    updateTask(this.drag.taskId, {
-                        dueDate: newDue
-                    }, undefined, datePlacementMode);
+                calendarDayDelta = diffCalendarDays(this.drag.originalDueDate!, candidateDue);
+            }
+
+            if (calendarDayDelta !== 0) this.pendingClick = null;
+            if (calendarDayDelta === this.drag.lastCalendarDayDelta) return;
+            this.drag.lastCalendarDayDelta = calendarDayDelta;
+
+            const cohort = this.drag.cohort && this.drag.cohort.length > 0
+                ? this.drag.cohort
+                : [{
+                    id: this.drag.taskId,
+                    originalStartDate: this.drag.originalStartDate,
+                    originalDueDate: this.drag.originalDueDate,
+                    projectId: useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId)?.projectId ?? ''
+                }];
+
+            const anchor = Number.isFinite(this.drag.originalStartDate)
+                ? this.drag.originalStartDate!
+                : this.drag.originalDueDate!;
+            const workingDayDelta = datePlacementMode === DatePlacementMode.WorkingDays && calendarDayDelta !== 0
+                ? diffWorkingDays(anchor, normalizeWorkingDate(
+                    addCalendarDays(anchor, calendarDayDelta),
+                    calendarDayDelta > 0 ? 'forward' : 'backward',
+                    this.drag.anchorProjectId
+                ), this.drag.anchorProjectId)
+                : 0;
+
+            const cohortTaskIds = new Set(cohort.map(m => m.id));
+            const updates: Array<{ id: string; updates: Partial<Task>; datePlacementMode?: DatePlacementModeValue }> = [];
+
+            for (const member of cohort) {
+                let newStart: number | undefined;
+                let newDue: number | undefined;
+
+                if (Number.isFinite(member.originalStartDate) && Number.isFinite(member.originalDueDate)) {
+                    if (datePlacementMode === DatePlacementMode.CalendarDays) {
+                        newStart = addCalendarDays(member.originalStartDate!, calendarDayDelta);
+                        newDue = addCalendarDays(member.originalDueDate!, calendarDayDelta);
+                    } else {
+                        newStart = shiftByWorkingDays(member.originalStartDate!, workingDayDelta, member.projectId);
+                        const duration = diffWorkingDays(member.originalStartDate!, member.originalDueDate!, member.projectId);
+                        newDue = workingDayDelta === 0 ? member.originalDueDate : shiftByWorkingDays(newStart, duration, member.projectId);
+                    }
+                } else if (Number.isFinite(member.originalStartDate)) {
+                    if (datePlacementMode === DatePlacementMode.CalendarDays) {
+                        newStart = addCalendarDays(member.originalStartDate!, calendarDayDelta);
+                    } else {
+                        newStart = shiftByWorkingDays(member.originalStartDate!, workingDayDelta, member.projectId);
+                    }
+                } else if (Number.isFinite(member.originalDueDate)) {
+                    if (datePlacementMode === DatePlacementMode.CalendarDays) {
+                        newDue = addCalendarDays(member.originalDueDate!, calendarDayDelta);
+                    } else {
+                        newDue = shiftByWorkingDays(member.originalDueDate!, workingDayDelta, member.projectId);
+                    }
+                }
+
+                const memberUpdates: Partial<Task> = {};
+                if (newStart !== undefined) {
+                    memberUpdates.startDate = newStart;
+                }
+                if (newDue !== undefined) {
+                    memberUpdates.dueDate = newDue;
+                }
+                if (Object.keys(memberUpdates).length > 0) {
+                    updates.push({
+                        id: member.id,
+                        updates: memberUpdates,
+                        // Restore the exact snapshot, including original non-working dates.
+                        datePlacementMode: datePlacementMode === DatePlacementMode.WorkingDays && workingDayDelta === 0
+                            ? DatePlacementMode.CalendarDays
+                            : datePlacementMode
+                    });
                 }
             }
+
+            this.drag.lastUpdateRejected = useTaskStore.getState()
+                .updateTasks(updates, cohortTaskIds, this.drag.barOperationId) === 'rejected';
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
             const datePlacementMode = this.drag.datePlacementMode;
@@ -486,7 +614,9 @@ export class InteractionEngine {
             // Only the pointer crossing the due date clears the start date, not calendar normalization.
             if (candidateStart > this.drag.originalDueDate!) {
                 if (Number.isFinite(currentTask?.startDate)) {
-                    updateTask(this.drag.taskId, { startDate: undefined }, undefined, datePlacementMode);
+                    updateDragTask({ startDate: undefined });
+                } else {
+                    this.drag.lastUpdateRejected = false;
                 }
                 return;
             }
@@ -494,8 +624,9 @@ export class InteractionEngine {
             const newStart = datePlacementMode === DatePlacementMode.CalendarDays
                 ? candidateStart
                 : normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
-            if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
-                updateTask(this.drag.taskId, { startDate: newStart }, undefined, datePlacementMode);
+            if (currentTask && newStart <= this.drag.originalDueDate!) {
+                if (currentTask.startDate !== newStart) updateDragTask({ startDate: newStart });
+                else this.drag.lastUpdateRejected = false;
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
@@ -514,7 +645,9 @@ export class InteractionEngine {
             // Only the pointer crossing the start date clears the due date, not calendar normalization.
             if (candidateEnd < this.drag.originalStartDate!) {
                 if (Number.isFinite(currentTask?.dueDate)) {
-                    updateTask(this.drag.taskId, { dueDate: undefined }, undefined, datePlacementMode);
+                    updateDragTask({ dueDate: undefined });
+                } else {
+                    this.drag.lastUpdateRejected = false;
                 }
                 return;
             }
@@ -522,17 +655,24 @@ export class InteractionEngine {
             const newEnd = datePlacementMode === DatePlacementMode.CalendarDays
                 ? candidateEnd
                 : normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
-            if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
-                updateTask(this.drag.taskId, { dueDate: newEnd }, undefined, datePlacementMode);
+            if (currentTask && newEnd >= this.drag.originalStartDate!) {
+                if (currentTask.dueDate !== newEnd) updateDragTask({ dueDate: newEnd });
+                else this.drag.lastUpdateRejected = false;
             }
         }
     };
 
-    private handleMouseUp = async () => {
-        const draggedTaskId = this.drag.taskId;
-        const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
-        const barOperationId = this.drag.barOperationId;
+    private handleMouseUp = () => this.finishDrag(Boolean(this.drag.lastUpdateRejected));
 
+    private handleCancel = () => this.finishDrag(true);
+
+    private finishDrag(cancel: boolean) {
+        if (this.drag.mode === 'none' && !this.pendingClick) return;
+        const draggedTaskId = this.drag.taskId;
+        const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && Boolean(draggedTaskId);
+        const barOperationId = this.drag.barOperationId;
+        const pendingClick = this.pendingClick;
+        this.pendingClick = null;
 
         // Resume sorting (will trigger re-layout)
         useTaskStore.getState().setSortingSuspended(false);
@@ -551,10 +691,16 @@ export class InteractionEngine {
 
         if (wasDragging && draggedTaskId) {
             const { autoSave, saveChanges, endBarOperation } = useTaskStore.getState();
-            if (barOperationId) endBarOperation(barOperationId);
-            if (autoSave) {
+            if (barOperationId) {
+                if (cancel) useTaskStore.getState().rollbackBarOperation(barOperationId);
+                else endBarOperation(barOperationId);
+            }
+            if (!cancel && pendingClick) useTaskStore.getState().selectTask(pendingClick.taskId);
+            if (!cancel && autoSave && barOperationId && useTaskStore.getState().barOperations[barOperationId]) {
                 saveChanges().catch(console.error);
             }
+        } else if (!cancel && pendingClick) {
+            useTaskStore.getState().selectTask(pendingClick.taskId);
         }
     };
 
@@ -568,6 +714,9 @@ export class InteractionEngine {
         if (hit.task && this.isPointerWithinActualTaskBarBounds(hit.task, x, y)) {
             setContextMenu({ x: e.clientX, y: e.clientY, taskId: hit.task.id });
         } else {
+            if (useTaskStore.getState().selectedTaskIds.length > 1) {
+                useTaskStore.getState().selectTask(null);
+            }
             setContextMenu(null);
         }
     };
@@ -600,6 +749,7 @@ export class InteractionEngine {
         const { tasks, selectedTaskId, selectTask } = useTaskStore.getState();
 
         if (e.key === 'Escape') {
+            this.finishDrag(true);
             selectTask(null);
             return;
         }

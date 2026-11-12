@@ -166,6 +166,44 @@ describe('TaskStore canonical mutation reconciliation', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
+    it('persists and settles recalculated dates for a manually scheduled parent', async () => {
+        const parent = buildTask({ id: 'manual-parent', hasChildren: true, startDate: MONDAY, dueDate: WEDNESDAY, lockVersion: 4 });
+        const child = buildTask({ id: 'manual-child', parentId: parent.id, startDate: MONDAY, dueDate: WEDNESDAY, lockVersion: 2 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [
+                { id: parent.id, startDate: MONDAY, dueDate: FRIDAY, lockVersion: 5 },
+                { id: child.id, startDate: MONDAY, dueDate: FRIDAY, lockVersion: 3 }
+            ],
+            revisions: { [parent.id]: 5, [child.id]: 3 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true, writable: true });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...parent, dueDate: FRIDAY, lockVersion: 5 }, { ...child, dueDate: FRIDAY, lockVersion: 3 }
+        ]));
+
+        try {
+            useTaskStore.setState({ autoSave: false });
+            useTaskStore.getState().setTasks([parent, child]);
+            useTaskStore.getState().updateTask(child.id, { dueDate: FRIDAY });
+
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set([child.id, parent.id]));
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toEqual([
+                expect.objectContaining({ mutationIntent: expect.objectContaining({ dueDate: FRIDAY }) })
+            ]);
+            expect(await useTaskStore.getState().saveChanges()).toEqual(new Map());
+            expect(scheduleMutation.mock.calls[0][0]).toEqual(expect.arrayContaining([
+                expect.objectContaining({ taskId: parent.id, dueDate: FRIDAY }),
+                expect.objectContaining({ taskId: child.id, dueDate: FRIDAY })
+            ]));
+            expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toBeUndefined();
+            expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)).toMatchObject({ dueDate: FRIDAY, lockVersion: 5 });
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
     it('projects derived parent dates without writing them and settles from an unchanged canonical ancestor', async () => {
         const parent = buildTask({
             id: 'derived-parent', startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4
@@ -1119,7 +1157,7 @@ describe('TaskStore bar operation rollback', () => {
         useTaskStore.getState().updateTask('bar-task', {
             startDate: WEDNESDAY,
             dueDate: THURSDAY
-        });
+        }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
 
         expect(useTaskStore.getState().allTasks[0].startDate).toBe(WEDNESDAY);
@@ -1146,7 +1184,7 @@ describe('TaskStore bar operation rollback', () => {
         useTaskStore.getState().updateTask('bar-task', {
             startDate: WEDNESDAY,
             dueDate: THURSDAY
-        });
+        }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.getState().updateTask('bar-task', {
             startDate: FRIDAY,
@@ -1173,7 +1211,7 @@ describe('TaskStore bar operation rollback', () => {
         useTaskStore.getState().updateTask('bar-task', {
             startDate: WEDNESDAY,
             dueDate: THURSDAY
-        });
+        }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.getState().updateTask('bar-task', { subject: 'later edit' });
 
@@ -1193,11 +1231,11 @@ describe('TaskStore bar operation rollback', () => {
         useTaskStore.setState({ allTasks: [taskA, taskB], tasks: [taskA, taskB] });
 
         const firstOperation = useTaskStore.getState().beginBarOperation('bar-a');
-        useTaskStore.getState().updateTask('bar-a', { dueDate: WEDNESDAY });
+        useTaskStore.getState().updateTask('bar-a', { dueDate: WEDNESDAY }, undefined, undefined, firstOperation);
         useTaskStore.getState().endBarOperation(firstOperation);
 
         const secondOperation = useTaskStore.getState().beginBarOperation('bar-b');
-        useTaskStore.getState().updateTask('bar-b', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('bar-b', { dueDate: THURSDAY }, undefined, undefined, secondOperation);
         useTaskStore.getState().endBarOperation(secondOperation);
 
         useTaskStore.getState().rollbackBarOperation(firstOperation);
@@ -1211,12 +1249,12 @@ describe('TaskStore bar operation rollback', () => {
         useTaskStore.setState({ allTasks: [original], tasks: [original] });
 
         const olderOperation = useTaskStore.getState().beginBarOperation('bar-task');
-        useTaskStore.getState().updateTask('bar-task', { dueDate: WEDNESDAY });
+        useTaskStore.getState().updateTask('bar-task', { dueDate: WEDNESDAY }, undefined, undefined, olderOperation);
         useTaskStore.getState().endBarOperation(olderOperation);
         const olderGeneration = useTaskStore.getState().barOperations[olderOperation].entityGenerations['bar-task'];
 
         const newerOperation = useTaskStore.getState().beginBarOperation('bar-task');
-        useTaskStore.getState().updateTask('bar-task', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('bar-task', { dueDate: THURSDAY }, undefined, undefined, newerOperation);
         useTaskStore.getState().endBarOperation(newerOperation);
         const newerGeneration = useTaskStore.getState().barOperations[newerOperation].entityGenerations['bar-task'];
 
@@ -3224,7 +3262,7 @@ describe('TaskStore asynchronous state ownership', () => {
         });
         expect(useTaskStore.getState().tasks[0].isContextOnly).toBe(true);
         const operationId = useTaskStore.getState().beginBarOperation('child');
-        useTaskStore.getState().updateTask('child', { dueDate: WEDNESDAY });
+        useTaskStore.getState().updateTask('child', { dueDate: WEDNESDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         resetDerivedRecalculationCounters();
 
@@ -3669,7 +3707,7 @@ describe('TaskStore asynchronous state ownership', () => {
         const remoteTask = buildTask({ id: 'task-1', ratioDone: 50, lockVersion: 2 });
         useTaskStore.getState().setTasks([localTask]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.setState({
             serverTaskSnapshot: {
@@ -3699,8 +3737,8 @@ describe('TaskStore asynchronous state ownership', () => {
         const remoteTaskA = buildTask({ id: 'task-a', ratioDone: 50, lockVersion: 2 });
         useTaskStore.getState().setTasks(localTasks);
         const operationId = useTaskStore.getState().beginBarOperation('task-a');
-        useTaskStore.getState().updateTask('task-a', { ratioDone: 40 });
-        useTaskStore.getState().updateTask('task-b', { ratioDone: 50 });
+        useTaskStore.getState().updateTask('task-a', { ratioDone: 40 }, undefined, undefined, operationId);
+        useTaskStore.getState().updateTask('task-b', { ratioDone: 50 }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.setState({
             serverTaskSnapshot: {
@@ -3729,12 +3767,12 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().setTasks([localTask]);
 
         const firstOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, firstOperationId);
         useTaskStore.getState().endBarOperation(firstOperationId);
         const conflictGeneration = useTaskStore.getState().editGenerations['task-1'];
 
         const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' }, undefined, undefined, laterOperationId);
         useTaskStore.getState().endBarOperation(laterOperationId);
         const laterGeneration = useTaskStore.getState().editGenerations['task-1'];
 
@@ -3812,7 +3850,7 @@ describe('TaskStore asynchronous state ownership', () => {
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
         useTaskStore.getState().setTasks([localTask]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
 
@@ -3922,7 +3960,7 @@ describe('TaskStore asynchronous state ownership', () => {
         const localTask = buildTask({ id: 'task-1', ratioDone: 20, lockVersion: 1 });
         useTaskStore.getState().applyApiData(buildApiData([localTask]));
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
@@ -4054,12 +4092,12 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().applyApiData(buildApiData([localTask]));
 
         const conflictedOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, conflictedOperationId);
         useTaskStore.getState().endBarOperation(conflictedOperationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
 
         const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' }, undefined, undefined, laterOperationId);
         useTaskStore.getState().endBarOperation(laterOperationId);
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
             { ...localTask, ratioDone: 40, subject: 'later local edit', lockVersion: 3 }
@@ -4081,7 +4119,7 @@ describe('TaskStore asynchronous state ownership', () => {
 
         const operationIds = [1, 2, 3].map(() => {
             const operationId = useTaskStore.getState().beginBarOperation('task-1');
-            useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+            useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, operationId);
             useTaskStore.getState().endBarOperation(operationId);
             return operationId;
         });
@@ -4095,7 +4133,7 @@ describe('TaskStore asynchronous state ownership', () => {
         await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalled());
 
         const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' }, undefined, undefined, laterOperationId);
         useTaskStore.getState().endBarOperation(laterOperationId);
         const laterGeneration = useTaskStore.getState().editGenerations['task-1'];
         useTaskStore.getState().registerTaskConflict('task-1', 'Later edit outcome unknown', laterGeneration,
@@ -4163,12 +4201,12 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().setTasks([localTask]);
 
         const firstOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, firstOperationId);
         useTaskStore.getState().endBarOperation(firstOperationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
 
         const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' }, undefined, undefined, laterOperationId);
         useTaskStore.getState().endBarOperation(laterOperationId);
 
         await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
@@ -4183,7 +4221,7 @@ describe('TaskStore asynchronous state ownership', () => {
     it('keeps the active operation when remote state is unavailable (non-schedule fields)', async () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', ratioDone: 20 })]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 }, undefined, undefined, operationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
 
         expect(useTaskStore.getState().activeBarOperationId).toBe(operationId);
@@ -4198,7 +4236,7 @@ describe('TaskStore asynchronous state ownership', () => {
         const task = buildTask({ id: 'task-1' });
         useTaskStore.getState().setTasks([task]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY });
+        useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
 
         useTaskStore.getState().applyTaskMutationMetadata('task-1', {
@@ -4229,14 +4267,14 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(updated?.hasChildren).toBe(true);
     });
 
-    it('clears deleted task ownership while preserving linked task ownership', () => {
+    it('keeps the drag active when a cohort task is deleted until rollback settles the rest', async () => {
         useTaskStore.getState().setTasks([
             buildTask({ id: 'task-a', dueDate: MONDAY }),
             buildTask({ id: 'task-b', dueDate: TUESDAY })
         ]);
         const operationId = useTaskStore.getState().beginBarOperation('task-a');
-        useTaskStore.getState().updateTask('task-a', { dueDate: WEDNESDAY });
-        useTaskStore.getState().updateTask('task-b', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-a', { dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        useTaskStore.getState().updateTask('task-b', { dueDate: THURSDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.setState({ activeBarOperationId: operationId });
 
@@ -4245,13 +4283,20 @@ describe('TaskStore asynchronous state ownership', () => {
         const state = useTaskStore.getState();
         expect(state.barOperations[operationId]?.entityGenerations['task-a']).toBeUndefined();
         expect(state.barOperations[operationId]?.entityGenerations['task-b']).toBeDefined();
-        expect(state.activeBarOperationId).toBeNull();
+        expect(state.activeBarOperationId).toBe(operationId);
+        const save = state.saveChanges();
+        await Promise.resolve();
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        expect(await save).toEqual(new Map());
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['task-b']);
+        expect(useTaskStore.getState().allTasks[0].dueDate).toBe(TUESDAY);
     });
 
     it('clears bar operation ownership when a task tombstone is terminal', () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: MONDAY })]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY });
+        useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
 
         useTaskStore.getState().markTaskTombstone('task-1', 'server');
@@ -4525,7 +4570,7 @@ describe('TaskStore asynchronous state ownership', () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
         useTaskStore.getState().setTasks([original]);
         const operationId = useTaskStore.getState().beginBarOperation();
-        useTaskStore.getState().updateTask('task-1', { startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { startDate: WEDNESDAY, dueDate: THURSDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
 
         await useTaskStore.getState().saveChanges();
@@ -4569,7 +4614,7 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().setTasks([barTask, ordinaryTask]);
 
         const operationId = useTaskStore.getState().beginBarOperation('bar-task');
-        useTaskStore.getState().updateTask('bar-task', { dueDate: 10 });
+        useTaskStore.getState().updateTask('bar-task', { dueDate: 10 }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.getState().updateTask('ordinary-task', { ratioDone: 11 });
 
@@ -4611,7 +4656,7 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().setTasks([original]);
 
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
 
         await useTaskStore.getState().saveChanges();
@@ -5861,8 +5906,8 @@ describe('TaskStore saveChanges ordering', () => {
         const taskB = buildTask({ id: 'task-b', subject: 'B before', lockVersion: 1 });
         useTaskStore.getState().setTasks([taskA, taskB]);
         const operationId = useTaskStore.getState().beginBarOperation('task-a');
-        useTaskStore.getState().updateTask('task-a', { subject: 'A local' });
-        useTaskStore.getState().updateTask('task-b', { subject: 'B local' });
+        useTaskStore.getState().updateTask('task-a', { subject: 'A local' }, undefined, undefined, operationId);
+        useTaskStore.getState().updateTask('task-b', { subject: 'B local' }, undefined, undefined, operationId);
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.setState({
             serverTaskSnapshot: {
@@ -7474,5 +7519,524 @@ describe('TaskStore relation draft persistence', () => {
         expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1);
         expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]?.status).toBe('pending');
         create.mockRestore();
+    });
+});
+
+describe('TaskStore multi-task selection and batch updates', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('manages single and multi selection state', () => {
+        const { selectTask, toggleSelectTask, clearSelection, setSelectedTasks } = useTaskStore.getState();
+
+        selectTask('t1');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t1');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1']);
+
+        toggleSelectTask('t2');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2']);
+
+        toggleSelectTask('t1');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2']);
+
+        toggleSelectTask('t2');
+        expect(useTaskStore.getState().selectedTaskId).toBeNull();
+        expect(useTaskStore.getState().selectedTaskIds).toEqual([]);
+
+        setSelectedTasks(['a', 'b', 'c']);
+        expect(useTaskStore.getState().selectedTaskId).toBe('c');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['a', 'b', 'c']);
+
+        clearSelection();
+        expect(useTaskStore.getState().selectedTaskId).toBeNull();
+        expect(useTaskStore.getState().selectedTaskIds).toEqual([]);
+    });
+
+    it('selects task range based on layout tasks order', () => {
+        const t1 = buildTask({ id: 't1', rowIndex: 0 });
+        const t2 = buildTask({ id: 't2', rowIndex: 1 });
+        const t3 = buildTask({ id: 't3', rowIndex: 2 });
+        const t4 = buildTask({ id: 't4', rowIndex: 3 });
+        useTaskStore.setState({ tasks: [t1, t2, t3, t4], allTasks: [t1, t2, t3, t4] });
+
+        useTaskStore.getState().selectTask('t1');
+        useTaskStore.getState().selectTaskRange('t3');
+
+        expect(useTaskStore.getState().selectedTaskId).toBe('t3');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2', 't3']);
+    });
+
+    it('updates multiple tasks atomically with updateTasks', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.setState({ tasks: [t1, t2], allTasks: [t1, t2] });
+
+        useTaskStore.getState().updateTasks([
+            { id: 't1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 't2', updates: { startDate: THURSDAY, dueDate: FRIDAY } }
+        ]);
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(THURSDAY);
+        expect(state.modifiedTaskIds.has('t1')).toBe(true);
+        expect(state.modifiedTaskIds.has('t2')).toBe(true);
+    });
+
+    it('suppresses auto-scheduling cascade between tasks within cohortTaskIds', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: TUESDAY, dueDate: WEDNESDAY });
+        const t3 = buildTask({ id: 't3', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const relations = [
+            { id: 'r1', from: 't1', to: 't2', type: 'precedes' as const },
+            { id: 'r2', from: 't2', to: 't3', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [t1, t2, t3],
+            allTasks: [t1, t2, t3],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+
+        // Moving t1 and t2 together (cohort); t3 is downstream outside cohort
+        useTaskStore.getState().updateTasks([
+            { id: 't1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 't2', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } }
+        ], new Set(['t1', 't2']));
+
+        const state = useTaskStore.getState();
+        // t1 and t2 are at their explicitly moved dates, NOT double-shifted
+        expect(state.allTasks.find(t => t.id === 't1')?.dueDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.dueDate).toBe(THURSDAY);
+        // t3 is outside cohort and got pushed by t2 (t2 dueDate is Thursday, so t3 starts Friday)
+        expect(state.allTasks.find(t => t.id === 't3')?.startDate).toBe(FRIDAY);
+    });
+
+    it('synchronizes selectedTaskIds and selectionAnchorId when focusing a task', () => {
+        const { setTasks, setSelectedTasks, focusTask } = useTaskStore.getState();
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY, rowIndex: 0 });
+        const t2 = buildTask({ id: 't2', startDate: WEDNESDAY, dueDate: THURSDAY, rowIndex: 1 });
+        setTasks([t1, t2]);
+        setSelectedTasks(['t1', 't2']);
+
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2']);
+
+        const result = focusTask('t2');
+        expect(result).toEqual({ status: 'ok' });
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+    });
+
+    it('shrinks and updates range on repeated Shift+click while preserving anchor', () => {
+        const t1 = buildTask({ id: 't1', rowIndex: 0 });
+        const t2 = buildTask({ id: 't2', rowIndex: 1 });
+        const t3 = buildTask({ id: 't3', rowIndex: 2 });
+        const t4 = buildTask({ id: 't4', rowIndex: 3 });
+        const t5 = buildTask({ id: 't5', rowIndex: 4 });
+        useTaskStore.setState({ tasks: [t1, t2, t3, t4, t5], allTasks: [t1, t2, t3, t4, t5] });
+
+        // 1. Initial selection at t2
+        useTaskStore.getState().selectTask('t2');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t2');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+
+        // 2. Expand range to t5 (Shift+click t5)
+        useTaskStore.getState().selectTaskRange('t5');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t5');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2', 't3', 't4', 't5']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+
+        // 3. Shrink range to t3 (Shift+click t3) - anchor t2 must be preserved and t4, t5 removed
+        useTaskStore.getState().selectTaskRange('t3');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t3');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t2', 't3']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+
+        // 4. Reverse range to t1 (Shift+click t1) - anchor t2 preserved, selecting t1..t2
+        useTaskStore.getState().selectTaskRange('t1');
+        expect(useTaskStore.getState().selectedTaskId).toBe('t1');
+        expect(useTaskStore.getState().selectedTaskIds).toEqual(['t1', 't2']);
+        expect(useTaskStore.getState().selectionAnchorId).toBe('t2');
+    });
+
+    it('rolls back all modified tasks from a multi-task barOperation', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: TUESDAY, dueDate: WEDNESDAY });
+        const t3 = buildTask({ id: 't3', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const relations = [
+            { id: 'r1', from: 't2', to: 't3', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [t1, t2, t3],
+            allTasks: [t1, t2, t3],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+
+        const operationId = useTaskStore.getState().beginBarOperation(['t1', 't2']);
+        useTaskStore.getState().updateTasks([
+            { id: 't1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 't2', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } }
+        ], new Set(['t1', 't2']), operationId);
+
+        let state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't3')?.startDate).toBe(FRIDAY);
+        expect(state.modifiedTaskIds.has('t1')).toBe(true);
+        expect(state.modifiedTaskIds.has('t2')).toBe(true);
+        expect(state.modifiedTaskIds.has('t3')).toBe(true);
+
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().rollbackBarOperation(operationId);
+
+        state = useTaskStore.getState();
+        expect(state.allTasks.find(t => t.id === 't1')?.startDate).toBe(MONDAY);
+        expect(state.allTasks.find(t => t.id === 't1')?.dueDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.startDate).toBe(TUESDAY);
+        expect(state.allTasks.find(t => t.id === 't2')?.dueDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't3')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find(t => t.id === 't3')?.dueDate).toBe(THURSDAY);
+        expect(state.modifiedTaskIds.has('t1')).toBe(false);
+        expect(state.modifiedTaskIds.has('t2')).toBe(false);
+        expect(state.modifiedTaskIds.has('t3')).toBe(false);
+    });
+
+    it('removes drag patches when the task returns to its original dates', () => {
+        const task = buildTask({ id: 'dragged', startDate: MONDAY, dueDate: TUESDAY, subject: 'before' });
+        useTaskStore.setState({ tasks: [task], allTasks: [task] });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        useTaskStore.getState().updateTask('dragged', { subject: 'prior' });
+        const operationId = useTaskStore.getState().beginBarOperation('dragged');
+        useTaskStore.getState().updateTask('dragged', { startDate: TUESDAY, dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        useTaskStore.getState().updateTask('dragged', { startDate: MONDAY, dueDate: TUESDAY }, undefined, undefined, operationId);
+        useTaskStore.getState().endBarOperation(operationId);
+        const state = useTaskStore.getState();
+        expect(state.allTasks[0]).toMatchObject({ startDate: MONDAY, dueDate: TUESDAY, subject: 'prior' });
+        expect(state.barOperations[operationId]).toBeUndefined();
+        expect(state.localTaskPatches.dragged).toHaveLength(1);
+        expect(state.modifiedTaskIds.has('dragged')).toBe(true);
+    });
+
+    it('waits for an active drag to roll back before capturing a save', async () => {
+        const task = buildTask({ id: 'dragged', startDate: MONDAY, dueDate: TUESDAY });
+        useTaskStore.getState().setTasks([task]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        const operationId = useTaskStore.getState().beginBarOperation(task.id);
+        useTaskStore.getState().updateTask(task.id, { dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        const save = useTaskStore.getState().saveChanges();
+        await Promise.resolve();
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        expect(await save).toEqual(new Map());
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().allTasks[0].dueDate).toBe(TUESDAY);
+    });
+
+    it('waits for a drag before capturing the next iteration of an existing save', async () => {
+        const task = buildTask({ id: 'dragged', subject: 'before', startDate: MONDAY, dueDate: TUESDAY });
+        const response = deferred<Awaited<ReturnType<typeof apiClient.updateTask>>>();
+        vi.mocked(apiClient.updateTask).mockReturnValueOnce(response.promise);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([{ ...task, subject: 'saved', dueDate: THURSDAY, lockVersion: 1 }]));
+        useTaskStore.getState().setTasks([task]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        useTaskStore.getState().updateTask(task.id, { subject: 'saved' });
+        const save = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        const operationId = useTaskStore.getState().beginBarOperation(task.id);
+        useTaskStore.getState().updateTask(task.id, { dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        response.resolve({ ...buildMutationAck(task.id, { subject: 'saved' }, 1), entity: { id: task.id, subject: 'saved', dueDate: THURSDAY, lockVersion: 1 } });
+        await vi.waitFor(() => expect(useTaskStore.getState().serverTaskSnapshot.entitiesById[task.id]?.lockVersion).toBe(1));
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        expect(await save).toEqual(new Map());
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({ subject: 'saved', lockVersion: 1, dueDate: THURSDAY });
+    });
+
+    it('rejects a malformed cohort atomically and distinguishes unchanged updates', () => {
+        const first = buildTask({ id: 'first', dueDate: TUESDAY });
+        const second = buildTask({ id: 'second', dueDate: TUESDAY });
+        useTaskStore.getState().setTasks([first, second]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        const operationId = useTaskStore.getState().beginBarOperation(['first', 'second']);
+        const ids = new Set(['first', 'second']);
+        expect(useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { dueDate: WEDNESDAY } },
+            { id: 'first', updates: { dueDate: WEDNESDAY } }
+        ], ids, operationId)).toBe('rejected');
+        expect(useTaskStore.getState().allTasks).toEqual([first, second]);
+        expect(useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { dueDate: TUESDAY } },
+            { id: 'second', updates: { dueDate: TUESDAY } }
+        ], ids, operationId)).toBe('unchanged');
+        useTaskStore.getState().rollbackBarOperation(operationId);
+    });
+
+    it('rolls back every grouped drag frame after an atomic schedule rejection while preserving a concurrent edit', async () => {
+        const first = buildTask({ id: 'first', startDate: MONDAY, dueDate: TUESDAY, lockVersion: 1 });
+        const second = buildTask({ id: 'second', startDate: MONDAY, dueDate: TUESDAY, lockVersion: 1 });
+        const other = buildTask({ id: 'other', subject: 'before', startDate: MONDAY, dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().setTasks([first, second, other]);
+        useTaskStore.setState({ autoSave: false });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        const operationId = useTaskStore.getState().beginBarOperation(['first', 'second']);
+        const ids = new Set(['first', 'second']);
+        useTaskStore.getState().updateTasks(['first', 'second'].map(id => ({ id, updates: { startDate: TUESDAY, dueDate: WEDNESDAY } })), ids, operationId);
+        useTaskStore.getState().updateTasks(['first', 'second'].map(id => ({ id, updates: { startDate: WEDNESDAY, dueDate: THURSDAY } })), ids, operationId);
+        useTaskStore.getState().endBarOperation(operationId);
+        const response = deferred<{ status: 'validation_error'; operationId: string; entities: never[]; revisions: Record<string, never>; errors: string[] }>();
+        const schedule = vi.fn().mockReturnValue(response.promise);
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: schedule, configurable: true });
+        try {
+            const save = useTaskStore.getState().saveChanges();
+            await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
+            useTaskStore.getState().updateTask('other', { subject: 'concurrent edit' });
+            response.resolve({ status: 'validation_error', operationId: 'rejected', entities: [], revisions: {}, errors: ['rejected'] });
+            const failures = await save;
+            const state = useTaskStore.getState();
+            expect(failures.size).toBeGreaterThan(0);
+            expect(state.allTasks.find(task => task.id === 'first')).toMatchObject(first);
+            expect(state.allTasks.find(task => task.id === 'second')).toMatchObject(second);
+            expect(state.localTaskPatches.first).toBeUndefined();
+            expect(state.localTaskPatches.second).toBeUndefined();
+            expect(state.allTasks.find(task => task.id === 'other')?.subject).toBe('concurrent edit');
+            expect(state.modifiedTaskIds.has('other')).toBe(true);
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('preserves an independent edit made during a multi-frame drag', () => {
+        const task = buildTask({ id: 'dragged', startDate: MONDAY, dueDate: TUESDAY, subject: 'before' });
+        useTaskStore.setState({ tasks: [task], allTasks: [task] });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        const operationId = useTaskStore.getState().beginBarOperation('dragged');
+        useTaskStore.getState().updateTask('dragged', { startDate: TUESDAY, dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        useTaskStore.getState().updateTask('dragged', { subject: 'independent' });
+        useTaskStore.getState().updateTask('dragged', { startDate: WEDNESDAY, dueDate: THURSDAY }, undefined, undefined, operationId);
+        useTaskStore.getState().updateTask('dragged', { subject: 'independent' });
+        useTaskStore.getState().endBarOperation(operationId);
+        expect(useTaskStore.getState().barOperations[operationId].entityGenerations.dragged).toBe(3);
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        const state = useTaskStore.getState();
+        expect(state.allTasks[0]).toMatchObject({ startDate: MONDAY, dueDate: TUESDAY, subject: 'independent' });
+        expect(state.modifiedTaskIds.has('dragged')).toBe(true);
+        expect(state.localTaskPatches.dragged).toHaveLength(2);
+    });
+
+    it.each([AutoScheduleMoveMode.ConstraintPush, AutoScheduleMoveMode.LinkedDownstreamShift])('rejects a new internal dependency violation in a selected cohort in mode %s', (mode) => {
+        const first = buildTask({ id: 'first', startDate: MONDAY, dueDate: TUESDAY });
+        const second = buildTask({ id: 'second', startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.setState({ tasks: [first, second], allTasks: [first, second], relations: [
+            { id: 'edge', from: 'first', to: 'second', type: 'precedes' as const }
+        ] });
+        useUIStore.setState({ autoScheduleMoveMode: mode });
+        useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 'second', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } }
+        ], new Set(['first', 'second']));
+        expect(useTaskStore.getState().allTasks).toEqual([first, second]);
+        expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
+    });
+
+    it.each([AutoScheduleMoveMode.ConstraintPush, AutoScheduleMoveMode.Off])('checks the successor calendar in cohort mode %s', (mode) => {
+        configureBusinessCalendar({ status: 'ok', revision: 'cohort', defaultCalendarId: 'p1',
+            projectCalendarIds: { p1: 'p1', p2: 'p2' }, calendars: {
+                p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} },
+                p2: { id: 'p2', name: 'P2', nonWorkingWeekDays: [0, 6], days: { '2026-01-08': { name: 'Holiday', type: 'non_working' } } }
+            }, warnings: [] });
+        try {
+            const first = buildTask({ id: 'first', projectId: 'p1', startDate: MONDAY, dueDate: TUESDAY });
+            const second = buildTask({ id: 'second', projectId: 'p2', startDate: WEDNESDAY, dueDate: THURSDAY });
+            useTaskStore.setState({ tasks: [first, second], allTasks: [first, second], relations: [
+                { id: 'edge', from: 'first', to: 'second', type: 'precedes' as const }
+            ] });
+            useUIStore.setState({ autoScheduleMoveMode: mode });
+            useTaskStore.getState().updateTasks([
+                { id: 'first', updates: { startDate: TUESDAY, dueDate: WEDNESDAY }, datePlacementMode: DatePlacementMode.CalendarDays },
+                { id: 'second', updates: { startDate: THURSDAY, dueDate: FRIDAY }, datePlacementMode: DatePlacementMode.CalendarDays }
+            ], new Set(['first', 'second']));
+            expect(useTaskStore.getState().allTasks[0].startDate).toBe(mode === AutoScheduleMoveMode.Off ? TUESDAY : MONDAY);
+        } finally { configureBusinessCalendar(undefined); }
+    });
+
+    it('does not mutate a selected cycle when automatic scheduling cannot resolve it', () => {
+        const first = buildTask({ id: 'first', startDate: MONDAY, dueDate: TUESDAY });
+        const second = buildTask({ id: 'second', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const relations = [
+            { id: 'a', from: 'first', to: 'second', type: 'precedes' as const },
+            { id: 'b', from: 'second', to: 'first', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({ tasks: [first, second], allTasks: [first, second], relations });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+        useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 'second', updates: { startDate: THURSDAY, dueDate: FRIDAY } }
+        ], new Set(['first', 'second']));
+        expect(useTaskStore.getState().allTasks).toEqual([first, second]);
+        expect(useTaskStore.getState().relations).toEqual(relations);
+    });
+
+    it.each([false, true])('merges cross-calendar shared successor proposals regardless of ordering (reversed: %s)', (reversed) => {
+        configureBusinessCalendar({ status: 'ok', revision: 'cohort-shared', defaultCalendarId: 'normal',
+            projectCalendarIds: { holiday: 'holiday', normal: 'normal' }, calendars: {
+                holiday: { id: 'holiday', name: 'Holiday', nonWorkingWeekDays: [0, 6], days: { '2026-01-07': { name: 'Holiday', type: 'non_working' } } },
+                normal: { id: 'normal', name: 'Normal', nonWorkingWeekDays: [0, 6], days: {} }
+            }, warnings: [] });
+        try {
+            const first = buildTask({ id: 'first', projectId: 'holiday', startDate: TUESDAY, dueDate: TUESDAY });
+            const second = buildTask({ id: 'second', projectId: 'normal', startDate: TUESDAY, dueDate: TUESDAY });
+            const successor = buildTask({ id: 'successor', projectId: 'normal', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+            const tasks = [first, second, successor];
+            useTaskStore.setState({ tasks, allTasks: tasks, relations: [
+                { id: 'a', from: 'first', to: 'successor', type: 'precedes' },
+                { id: 'b', from: 'second', to: 'successor', type: 'precedes' }
+            ] });
+            useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+            const updates = [first, second].map(task => ({ id: task.id,
+                updates: { startDate: THURSDAY, dueDate: THURSDAY }, datePlacementMode: DatePlacementMode.CalendarDays }));
+            useTaskStore.getState().updateTasks(reversed ? updates.reverse() : updates, new Set(['first', 'second']));
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'successor')).toMatchObject({ startDate: FRIDAY, dueDate: FRIDAY });
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'first')?.dueDate).toBe(THURSDAY);
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'second')?.dueDate).toBe(THURSDAY);
+        } finally { configureBusinessCalendar(undefined); }
+    });
+
+    it.each([false, true])('merges backward cross-calendar proposals before checking dependencies (reversed: %s)', (reversed) => {
+        configureBusinessCalendar({ status: 'ok', revision: 'cohort-backward', defaultCalendarId: 'normal',
+            projectCalendarIds: { holiday: 'holiday', normal: 'normal' }, calendars: {
+                holiday: { id: 'holiday', name: 'Holiday', nonWorkingWeekDays: [0, 6], days: { '2026-01-07': { name: 'Holiday', type: 'non_working' } } },
+                normal: { id: 'normal', name: 'Normal', nonWorkingWeekDays: [0, 6], days: {} }
+            }, warnings: [] });
+        try {
+            const first = buildTask({ id: 'first', projectId: 'holiday', startDate: THURSDAY, dueDate: THURSDAY });
+            const second = buildTask({ id: 'second', projectId: 'normal', startDate: THURSDAY, dueDate: THURSDAY });
+            const successor = buildTask({ id: 'successor', projectId: 'holiday', startDate: FRIDAY, dueDate: FRIDAY });
+            const tasks = [first, second, successor];
+            useTaskStore.setState({ tasks, allTasks: tasks, relations: [
+                { id: 'a', from: 'first', to: 'successor', type: 'precedes' },
+                { id: 'b', from: 'second', to: 'successor', type: 'precedes' }
+            ] });
+            useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+            const updates = [
+                { id: 'first', updates: { startDate: TUESDAY, dueDate: TUESDAY }, datePlacementMode: DatePlacementMode.CalendarDays },
+                { id: 'second', updates: { startDate: TUESDAY, dueDate: TUESDAY }, datePlacementMode: DatePlacementMode.CalendarDays }
+            ];
+            useTaskStore.getState().updateTasks(reversed ? updates.reverse() : updates, new Set(['first', 'second']));
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'successor')).toMatchObject({ startDate: THURSDAY, dueDate: THURSDAY });
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'first')?.dueDate).toBe(TUESDAY);
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'second')?.dueDate).toBe(TUESDAY);
+        } finally { configureBusinessCalendar(undefined); }
+    });
+
+    it('rejects a merged linked shift that violates an external predecessor', () => {
+        const first = buildTask({ id: 'first', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+        const second = buildTask({ id: 'second', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+        const external = buildTask({ id: 'external', startDate: THURSDAY, dueDate: THURSDAY });
+        const successor = buildTask({ id: 'successor', startDate: FRIDAY, dueDate: FRIDAY });
+        const tasks = [first, second, external, successor];
+        useTaskStore.setState({ tasks, allTasks: tasks, relations: [
+            { id: 'a', from: 'first', to: 'successor', type: 'precedes' },
+            { id: 'b', from: 'second', to: 'successor', type: 'precedes' },
+            { id: 'c', from: 'external', to: 'successor', type: 'precedes' }
+        ] });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+        useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { startDate: TUESDAY, dueDate: TUESDAY } },
+            { id: 'second', updates: { startDate: TUESDAY, dueDate: TUESDAY } }
+        ], new Set(['first', 'second']));
+        expect(useTaskStore.getState().allTasks).toEqual(tasks);
+        expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
+    });
+
+    it('handles multiple predecessors in LinkedDownstreamShift for forward and backward shifts', () => {
+        // Forward shift:
+        // p1 (Mon-Tue) and p2 (Mon-Wed) both precede successor (Thu-Fri).
+        // Shift p1 to Tue-Wed, and p2 to Wed-Fri.
+        // successor should be pushed based on p2 (the larger shift), not overridden by p1.
+        const p1 = buildTask({ id: 'p1', startDate: MONDAY, dueDate: TUESDAY });
+        const p2 = buildTask({ id: 'p2', startDate: MONDAY, dueDate: WEDNESDAY });
+        const succ = buildTask({ id: 'succ', startDate: THURSDAY, dueDate: FRIDAY });
+        const relations = [
+            { id: 'r1', from: 'p1', to: 'succ', type: 'precedes' as const },
+            { id: 'r2', from: 'p2', to: 'succ', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [p1, p2, succ],
+            allTasks: [p1, p2, succ],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+
+        useTaskStore.getState().updateTasks([
+            { id: 'p1', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } },
+            { id: 'p2', updates: { startDate: WEDNESDAY, dueDate: FRIDAY } }
+        ], new Set(['p1', 'p2']));
+
+        let state = useTaskStore.getState();
+        const succTask = state.allTasks.find(t => t.id === 'succ');
+        // p2 dueDate shifted +2 days (Wed -> Fri). In LinkedDownstreamShift, succ shifts by +2 days (Thu -> Sat: THURSDAY + 2 * DAY)
+        // Math.max prevents p1's smaller +1 day shift from overwriting p2's +2 day shift
+        expect(succTask?.startDate).toBe(THURSDAY + 2 * DAY);
+
+        // Backward shift:
+        // Initially: p1 (Wed-Wed) and p2 (Wed-Thu) both precede succ (Fri-Fri).
+        // p2 dueDate (Thu) was the constraining predecessor holding succ at Friday.
+        // Both p1 and p2 shift backward by 1 day: p1 to Tue-Tue, p2 to Tue-Wed.
+        // tasksForDependencyCheck passes p2's updated earlier dueDate (Wed) so p1 does not falsely
+        // trigger label_auto_schedule_external_conflict against p2's original Thursday dueDate.
+        // successor shifts backward cleanly to start on Thursday without constraint errors.
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        const p1Back = buildTask({ id: 'p1', startDate: WEDNESDAY, dueDate: WEDNESDAY });
+        const p2Back = buildTask({ id: 'p2', startDate: WEDNESDAY, dueDate: THURSDAY });
+        const succBack = buildTask({ id: 'succ', startDate: FRIDAY, dueDate: FRIDAY });
+        useTaskStore.setState({
+            tasks: [p1Back, p2Back, succBack],
+            allTasks: [p1Back, p2Back, succBack],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+
+        useTaskStore.getState().updateTasks([
+            { id: 'p1', updates: { startDate: TUESDAY, dueDate: TUESDAY } },
+            { id: 'p2', updates: { startDate: TUESDAY, dueDate: WEDNESDAY } }
+        ], new Set(['p1', 'p2']));
+
+        state = useTaskStore.getState();
+        const succBackUpdated = state.allTasks.find(t => t.id === 'succ');
+        expect(succBackUpdated?.startDate).toBe(THURSDAY);
+    });
+
+    it('rejects a selected cycle without changing tasks or relations', () => {
+        const t1 = buildTask({ id: 't1', startDate: MONDAY, dueDate: TUESDAY });
+        const t2 = buildTask({ id: 't2', startDate: TUESDAY, dueDate: WEDNESDAY });
+        const relations = [
+            { id: 'r1', from: 't1', to: 't2', type: 'precedes' as const },
+            { id: 'r2', from: 't2', to: 't1', type: 'precedes' as const }
+        ];
+        useTaskStore.setState({
+            tasks: [t1, t2],
+            allTasks: [t1, t2],
+            relations
+        });
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+
+        expect(() => {
+            useTaskStore.getState().updateTasks([
+                { id: 't1', updates: { startDate: WEDNESDAY, dueDate: THURSDAY } },
+                { id: 't2', updates: { startDate: THURSDAY, dueDate: FRIDAY } }
+            ], new Set(['t1', 't2']));
+        }).not.toThrow();
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([t1, t2]);
+        expect(state.relations).toEqual(relations);
     });
 });

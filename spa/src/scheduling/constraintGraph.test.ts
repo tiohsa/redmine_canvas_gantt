@@ -178,4 +178,46 @@ describe('constraintGraph', () => {
         expect(updates.get('B')).toEqual({ startDate: monday, dueDate: tuesday });
         window.RedmineCanvasGantt = originalConfig;
     });
+
+    it('does not emit downstream updates for tasks in ignoredTaskIds cohort', () => {
+        const tasks = [
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'D', startDate: MONDAY, dueDate: TUESDAY })
+        ];
+        const relations: Relation[] = [
+            { id: 'r1', from: 'A', to: 'B', type: RelationType.Precedes },
+            { id: 'r2', from: 'A', to: 'D', type: RelationType.Precedes }
+        ];
+
+        // B is in ignoredTaskIds (e.g. part of moving cohort), but D is downstream outside cohort
+        const updates = recalculateDownstreamTasks(tasks, relations, 'A', new Set(['B']));
+
+        expect(updates.has('B')).toBe(false);
+        expect(updates.has('D')).toBe(true);
+    });
+
+    it('skips linked downstream updates for tasks in ignoredTaskIds', () => {
+        const tasks = [
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY }),
+            buildTask({ id: 'D', startDate: WEDNESDAY, dueDate: THURSDAY })
+        ];
+        const relations: Relation[] = [
+            { id: 'r1', from: 'A', to: 'B', type: RelationType.Precedes },
+            { id: 'r2', from: 'A', to: 'D', type: RelationType.Precedes }
+        ];
+
+        const { updates } = calculateLinkedDownstreamUpdates(
+            tasks,
+            relations,
+            'A',
+            TUESDAY,
+            WEDNESDAY,
+            new Set(['B'])
+        );
+
+        expect(updates.has('B')).toBe(false);
+        expect(updates.has('D')).toBe(true);
+    });
 });
