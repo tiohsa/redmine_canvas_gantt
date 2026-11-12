@@ -46,6 +46,7 @@ interface DragState {
     datePlacementMode: DatePlacementModeValue;
     cohort?: DragCohortMember[];
     lastCalendarDayDelta?: number;
+    lastUpdateRejected?: boolean;
 }
 
 export class InteractionEngine {
@@ -93,13 +94,15 @@ export class InteractionEngine {
         this.container.addEventListener('mousedown', this.handleMouseDown);
         window.addEventListener('mousemove', this.handleMouseMove);
         window.addEventListener('mouseup', this.handleMouseUp);
+        window.addEventListener('blur', this.handleCancel);
         this.container.addEventListener('wheel', this.handleWheel, { passive: false });
         this.container.addEventListener('contextmenu', this.handleContextMenu);
         window.addEventListener('keydown', this.handleKeyDown);
     }
 
     public detach() {
-        this.pendingClick = null;
+        this.finishDrag(true);
+        window.removeEventListener('blur', this.handleCancel);
         this.container.removeEventListener('mousedown', this.handleMouseDown);
         window.removeEventListener('mousemove', this.handleMouseMove);
         window.removeEventListener('mouseup', this.handleMouseUp);
@@ -298,8 +301,8 @@ export class InteractionEngine {
     }
 
     private handleMouseDown = (e: MouseEvent) => {
+        if (e.button !== 0 || this.drag.mode !== 'none') return;
         this.pendingClick = null;
-        if (e.button === 2) return; // Ignore right-click
         if (this.isScrollInteractionLocked()) return;
 
         // Ignore events from dependency handles (let/leave them for the Overlay handler)
@@ -447,7 +450,12 @@ export class InteractionEngine {
         if (this.pendingClick && Math.hypot(e.clientX - this.pendingClick.startX, e.clientY - this.pendingClick.startY) >= 3) {
             this.pendingClick = null;
         }
-        const { viewport, updateTask, setHoveredTask } = useTaskStore.getState();
+        const { viewport, updateTasks, setHoveredTask } = useTaskStore.getState();
+        const updateDragTask = (updates: Partial<Task>) => {
+            this.drag.lastUpdateRejected = updateTasks([{
+                id: this.drag.taskId!, updates, datePlacementMode: this.drag.datePlacementMode
+            }], undefined, this.drag.barOperationId) === 'rejected';
+        };
 
         // Hover logic (only update when not dragging a task)
         const rect = this.container.getBoundingClientRect();
@@ -587,7 +595,8 @@ export class InteractionEngine {
                 }
             }
 
-            useTaskStore.getState().updateTasks(updates, cohortTaskIds, this.drag.barOperationId);
+            this.drag.lastUpdateRejected = useTaskStore.getState()
+                .updateTasks(updates, cohortTaskIds, this.drag.barOperationId) === 'rejected';
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
             const datePlacementMode = this.drag.datePlacementMode;
@@ -605,7 +614,9 @@ export class InteractionEngine {
             // Only the pointer crossing the due date clears the start date, not calendar normalization.
             if (candidateStart > this.drag.originalDueDate!) {
                 if (Number.isFinite(currentTask?.startDate)) {
-                    updateTask(this.drag.taskId, { startDate: undefined }, undefined, datePlacementMode, this.drag.barOperationId);
+                    updateDragTask({ startDate: undefined });
+                } else {
+                    this.drag.lastUpdateRejected = false;
                 }
                 return;
             }
@@ -613,8 +624,9 @@ export class InteractionEngine {
             const newStart = datePlacementMode === DatePlacementMode.CalendarDays
                 ? candidateStart
                 : normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
-            if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
-                updateTask(this.drag.taskId, { startDate: newStart }, undefined, datePlacementMode, this.drag.barOperationId);
+            if (currentTask && newStart <= this.drag.originalDueDate!) {
+                if (currentTask.startDate !== newStart) updateDragTask({ startDate: newStart });
+                else this.drag.lastUpdateRejected = false;
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
@@ -633,7 +645,9 @@ export class InteractionEngine {
             // Only the pointer crossing the start date clears the due date, not calendar normalization.
             if (candidateEnd < this.drag.originalStartDate!) {
                 if (Number.isFinite(currentTask?.dueDate)) {
-                    updateTask(this.drag.taskId, { dueDate: undefined }, undefined, datePlacementMode, this.drag.barOperationId);
+                    updateDragTask({ dueDate: undefined });
+                } else {
+                    this.drag.lastUpdateRejected = false;
                 }
                 return;
             }
@@ -641,13 +655,19 @@ export class InteractionEngine {
             const newEnd = datePlacementMode === DatePlacementMode.CalendarDays
                 ? candidateEnd
                 : normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
-            if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
-                updateTask(this.drag.taskId, { dueDate: newEnd }, undefined, datePlacementMode, this.drag.barOperationId);
+            if (currentTask && newEnd >= this.drag.originalStartDate!) {
+                if (currentTask.dueDate !== newEnd) updateDragTask({ dueDate: newEnd });
+                else this.drag.lastUpdateRejected = false;
             }
         }
     };
 
-    private handleMouseUp = async () => {
+    private handleMouseUp = () => this.finishDrag(Boolean(this.drag.lastUpdateRejected));
+
+    private handleCancel = () => this.finishDrag(true);
+
+    private finishDrag(cancel: boolean) {
+        if (this.drag.mode === 'none' && !this.pendingClick) return;
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && Boolean(draggedTaskId);
         const barOperationId = this.drag.barOperationId;
@@ -671,12 +691,15 @@ export class InteractionEngine {
 
         if (wasDragging && draggedTaskId) {
             const { autoSave, saveChanges, endBarOperation } = useTaskStore.getState();
-            if (barOperationId) endBarOperation(barOperationId);
-            if (pendingClick) useTaskStore.getState().selectTask(pendingClick.taskId);
-            if (autoSave && barOperationId && useTaskStore.getState().barOperations[barOperationId]) {
+            if (barOperationId) {
+                if (cancel) useTaskStore.getState().rollbackBarOperation(barOperationId);
+                else endBarOperation(barOperationId);
+            }
+            if (!cancel && pendingClick) useTaskStore.getState().selectTask(pendingClick.taskId);
+            if (!cancel && autoSave && barOperationId && useTaskStore.getState().barOperations[barOperationId]) {
                 saveChanges().catch(console.error);
             }
-        } else if (pendingClick) {
+        } else if (!cancel && pendingClick) {
             useTaskStore.getState().selectTask(pendingClick.taskId);
         }
     };
@@ -726,6 +749,7 @@ export class InteractionEngine {
         const { tasks, selectedTaskId, selectTask } = useTaskStore.getState();
 
         if (e.key === 'Escape') {
+            this.finishDrag(true);
             selectTask(null);
             return;
         }

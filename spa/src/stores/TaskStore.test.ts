@@ -4267,7 +4267,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(updated?.hasChildren).toBe(true);
     });
 
-    it('clears deleted task ownership while preserving linked task ownership', () => {
+    it('keeps the drag active when a cohort task is deleted until rollback settles the rest', async () => {
         useTaskStore.getState().setTasks([
             buildTask({ id: 'task-a', dueDate: MONDAY }),
             buildTask({ id: 'task-b', dueDate: TUESDAY })
@@ -4283,7 +4283,14 @@ describe('TaskStore asynchronous state ownership', () => {
         const state = useTaskStore.getState();
         expect(state.barOperations[operationId]?.entityGenerations['task-a']).toBeUndefined();
         expect(state.barOperations[operationId]?.entityGenerations['task-b']).toBeDefined();
-        expect(state.activeBarOperationId).toBeNull();
+        expect(state.activeBarOperationId).toBe(operationId);
+        const save = state.saveChanges();
+        await Promise.resolve();
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        expect(await save).toEqual(new Map());
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['task-b']);
+        expect(useTaskStore.getState().allTasks[0].dueDate).toBe(TUESDAY);
     });
 
     it('clears bar operation ownership when a task tombstone is terminal', () => {
@@ -7715,6 +7722,61 @@ describe('TaskStore multi-task selection and batch updates', () => {
         expect(state.barOperations[operationId]).toBeUndefined();
         expect(state.localTaskPatches.dragged).toHaveLength(1);
         expect(state.modifiedTaskIds.has('dragged')).toBe(true);
+    });
+
+    it('waits for an active drag to roll back before capturing a save', async () => {
+        const task = buildTask({ id: 'dragged', startDate: MONDAY, dueDate: TUESDAY });
+        useTaskStore.getState().setTasks([task]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        const operationId = useTaskStore.getState().beginBarOperation(task.id);
+        useTaskStore.getState().updateTask(task.id, { dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        const save = useTaskStore.getState().saveChanges();
+        await Promise.resolve();
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        expect(await save).toEqual(new Map());
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().allTasks[0].dueDate).toBe(TUESDAY);
+    });
+
+    it('waits for a drag before capturing the next iteration of an existing save', async () => {
+        const task = buildTask({ id: 'dragged', subject: 'before', startDate: MONDAY, dueDate: TUESDAY });
+        const response = deferred<Awaited<ReturnType<typeof apiClient.updateTask>>>();
+        vi.mocked(apiClient.updateTask).mockReturnValueOnce(response.promise);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([{ ...task, subject: 'saved', dueDate: THURSDAY, lockVersion: 1 }]));
+        useTaskStore.getState().setTasks([task]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        useTaskStore.getState().updateTask(task.id, { subject: 'saved' });
+        const save = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        const operationId = useTaskStore.getState().beginBarOperation(task.id);
+        useTaskStore.getState().updateTask(task.id, { dueDate: WEDNESDAY }, undefined, undefined, operationId);
+        response.resolve({ ...buildMutationAck(task.id, { subject: 'saved' }, 1), entity: { id: task.id, subject: 'saved', dueDate: THURSDAY, lockVersion: 1 } });
+        await vi.waitFor(() => expect(useTaskStore.getState().serverTaskSnapshot.entitiesById[task.id]?.lockVersion).toBe(1));
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        useTaskStore.getState().rollbackBarOperation(operationId);
+        expect(await save).toEqual(new Map());
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({ subject: 'saved', lockVersion: 1, dueDate: THURSDAY });
+    });
+
+    it('rejects a malformed cohort atomically and distinguishes unchanged updates', () => {
+        const first = buildTask({ id: 'first', dueDate: TUESDAY });
+        const second = buildTask({ id: 'second', dueDate: TUESDAY });
+        useTaskStore.getState().setTasks([first, second]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        const operationId = useTaskStore.getState().beginBarOperation(['first', 'second']);
+        const ids = new Set(['first', 'second']);
+        expect(useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { dueDate: WEDNESDAY } },
+            { id: 'first', updates: { dueDate: WEDNESDAY } }
+        ], ids, operationId)).toBe('rejected');
+        expect(useTaskStore.getState().allTasks).toEqual([first, second]);
+        expect(useTaskStore.getState().updateTasks([
+            { id: 'first', updates: { dueDate: TUESDAY } },
+            { id: 'second', updates: { dueDate: TUESDAY } }
+        ], ids, operationId)).toBe('unchanged');
+        useTaskStore.getState().rollbackBarOperation(operationId);
     });
 
     it('rolls back every grouped drag frame after an atomic schedule rejection while preserving a concurrent edit', async () => {

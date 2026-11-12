@@ -1,5 +1,5 @@
 import type { Task } from '../../types';
-import { applyLocalPatches, hasLocalMutationIntent, type LocalPatch } from './stateContract';
+import { applyLocalPatches, hasLocalMutationIntent, type LocalPatch, type ServerSnapshot } from './stateContract';
 
 export type BarOperationRecord = {
     operationId: string;
@@ -21,6 +21,7 @@ export type BarOperationState = {
 
 type BarOperationRollbackState = BarOperationState & {
     allTasks: Task[];
+    serverTaskSnapshot?: ServerSnapshot<Task>;
     editGenerations: Record<string, number>;
     localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
     modifiedTaskIds: Set<string>;
@@ -64,7 +65,7 @@ export const endBarOperation = (
     localTaskPatches?: Record<string, Array<LocalPatch<Task>>>
 ): BarOperationState => {
     const operation = operations[operationId];
-    if (!operation) return { barOperations: operations, activeBarOperationId };
+    if (!operation) return { barOperations: operations, activeBarOperationId: activeBarOperationId === operationId ? null : activeBarOperationId };
 
     const entityGenerations = Object.fromEntries(
         tasks
@@ -127,9 +128,7 @@ export const settleBarOperationTaskOwnership = (
 
     return {
         barOperations,
-        activeBarOperationId: activeBarOperationId !== null && matchingOperations.some(([operationId]) => operationId === activeBarOperationId)
-            ? null
-            : activeBarOperationId
+        activeBarOperationId
     };
 };
 
@@ -165,8 +164,16 @@ export const buildBarOperationRollback = (
     if (!operation) return null;
 
     const baselineById = new Map(operation.baselineAllTasks.map(task => [task.id, task]));
+    // Active operations have not yet recorded their final entity generations.
+    const generations = { ...operation.entityGenerations };
+    if (state.activeBarOperationId === operationId) {
+        Object.entries(state.localTaskPatches).forEach(([taskId, patches]) => {
+            const owned = patches.filter(patch => patch.barOperationId === operationId);
+            if (owned.length) generations[taskId] = Math.max(...owned.map(patch => patch.generation));
+        });
+    }
     const rollbackIds = new Set(
-        Object.entries(operation.entityGenerations)
+        Object.entries(generations)
             .filter(([taskId, generation]) => (
                 (state.editGenerations[taskId] ?? 0) >= generation &&
                 !operation.completedTaskIds.includes(taskId) &&
@@ -177,11 +184,24 @@ export const buildBarOperationRollback = (
     const allTasks = state.allTasks.map(task => {
         const baseline = baselineById.get(task.id);
         if (!rollbackIds.has(task.id) || !baseline) return task;
-        const baselineGeneration = operation.baselineGenerations[task.id] ?? 0;
-        const laterPatches = (state.localTaskPatches[task.id] ?? []).filter(
-            patch => patch.generation > baselineGeneration && patch.barOperationId !== operationId
+        const remainingPatches = (state.localTaskPatches[task.id] ?? []).filter(
+            patch => patch.barOperationId !== operationId
         );
-        return applyLocalPatches(baseline, laterPatches);
+        const serverTask = state.serverTaskSnapshot?.entitiesById[task.id];
+        if (serverTask) return applyLocalPatches(serverTask, remainingPatches);
+
+        // Some callers have no server snapshot. Restore only drag-owned fields
+        // while retaining unrelated fields from the current task.
+        const restored = { ...task };
+        (state.localTaskPatches[task.id] ?? [])
+            .filter(patch => patch.barOperationId === operationId)
+            .forEach(patch => {
+                Object.keys(patch.projection).forEach(field => {
+                    if (field === 'id' || field === 'lockVersion') return;
+                    Object.assign(restored, { [field]: baseline[field as keyof Task] });
+                });
+            });
+        return applyLocalPatches(restored, remainingPatches);
     });
     const localTaskPatches = { ...state.localTaskPatches };
     const modifiedTaskIds = new Set(state.modifiedTaskIds);

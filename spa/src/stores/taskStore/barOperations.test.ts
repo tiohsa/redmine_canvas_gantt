@@ -156,3 +156,41 @@ describe('bar operation lifecycle', () => {
         expect(rollback?.modifiedTaskIds.has('1')).toBe(true);
     });
 });
+
+
+it.each([false, true])('preserves newer committed state and remaining patches (snapshot: %s)', (withSnapshot) => {
+    const baseline = task('1', 'old subject');
+    const committed = { ...baseline, subject: 'committed subject', lockVersion: 2, dueDate: 3 };
+    const rollback = buildBarOperationRollback({
+        allTasks: [{ ...committed, dueDate: 3 }],
+        ...(withSnapshot ? { serverTaskSnapshot: { entitiesById: { '1': committed }, revisions: { '1': 2 }, context: null } } : {}),
+        editGenerations: { '1': 1 },
+        localTaskPatches: { '1': [{ entityId: '1', operationId: 'edit:1:1', barOperationId: 'bar:1', generation: 1, projection: { dueDate: 3 }, mutationIntent: { dueDate: 3 } }] },
+        modifiedTaskIds: new Set(['1']),
+        barOperations: { 'bar:1': { operationId: 'bar:1', baselineAllTasks: [baseline], baselineGenerations: { '1': 0 }, entityGenerations: { '1': 1 }, completedTaskIds: [] } },
+        activeBarOperationId: null
+    }, 'bar:1');
+    expect(rollback?.allTasks[0]).toMatchObject({ subject: 'committed subject', lockVersion: 2, dueDate: withSnapshot ? 3 : 2 });
+});
+
+it('keeps an active operation until explicitly ended after its task is deleted', () => {
+    const baseline = task('1', 'before');
+    const started = beginBarOperation({}, [baseline], {}, 'bar:active', '1');
+    const settled = settleBarOperationTaskOwnership(started.barOperations, started.activeBarOperationId, '1', { mode: 'all' });
+    expect(settled.barOperations).toEqual({});
+    expect(settled.activeBarOperationId).toBe('bar:active');
+    expect(endBarOperation(settled.barOperations, settled.activeBarOperationId, [], {}, 'bar:active').activeBarOperationId).toBeNull();
+});
+
+it('rolls back an active operation without resurrecting a deleted task', () => {
+    const baseline = task('1', 'before');
+    const started = beginBarOperation({}, [baseline], {}, 'bar:active', '1');
+    const patch = { entityId: '1', operationId: 'edit:1', barOperationId: 'bar:active', generation: 1, projection: { dueDate: 3 }, mutationIntent: { dueDate: 3 } };
+    const rollback = buildBarOperationRollback({
+        ...started, allTasks: [], editGenerations: { '1': 1 }, localTaskPatches: { '1': [patch] },
+        modifiedTaskIds: new Set(['1']), serverTaskSnapshot: { entitiesById: {}, revisions: {}, context: null }
+    }, 'bar:active');
+    expect(rollback?.allTasks).toEqual([]);
+    expect(rollback?.localTaskPatches).toEqual({});
+    expect(rollback?.activeBarOperationId).toBeNull();
+});

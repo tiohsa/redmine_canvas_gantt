@@ -348,7 +348,7 @@ export interface TaskState {
         }>,
         cohortTaskIds?: Set<string>,
         barOperationId?: string | null
-    ) => void;
+    ) => 'applied' | 'unchanged' | 'rejected';
     beginBarOperation: (seedTaskId?: string | string[]) => string;
     endBarOperation: (operationId: string) => void;
     rollbackBarOperation: (operationId: string) => void;
@@ -2272,8 +2272,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
 
     rollbackBarOperation: (operationId) => set((state) => {
+        dragNotifications.delete(operationId);
         const rollback = buildBarOperationRollback(state, operationId);
-        if (!rollback) return state;
+        if (!rollback) return state.activeBarOperationId === operationId ? { activeBarOperationId: null } : state;
         const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
         const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, effectiveRelations, state.calculateCriticalPathEnabled);
         const changedFields = new Set<string>();
@@ -2295,7 +2296,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
-    updateTasks: (taskUpdates, cohortTaskIds, barOperationId) => set((state) => {
+    updateTasks: (taskUpdates, cohortTaskIds, barOperationId) => {
+        let outcome: 'applied' | 'unchanged' | 'rejected' = 'unchanged';
+        set((state) => {
         if (!taskUpdates || taskUpdates.length === 0) return state;
 
         invalidateDataRequests();
@@ -2315,9 +2318,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         for (const item of taskUpdates) {
             const task = taskById.get(item.id);
-            if (!task) continue;
+            if (!task) { outcome = 'rejected'; continue; }
 
             if (!TaskLogicService.canEditTask(task)) {
+                outcome = 'rejected';
                 console.warn('Task is not editable');
                 continue;
             }
@@ -2357,8 +2361,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
         }
 
-        if (preparedUpdates.length === 0 || (cohortTaskIds &&
-            (preparedUpdates.length !== cohortTaskIds.size || preparedUpdates.some(p => !cohortTaskIds.has(p.task.id))))) return state;
+        if (cohortTaskIds && (outcome === 'rejected' || preparedUpdates.length !== cohortTaskIds.size ||
+            new Set(preparedUpdates.map(p => p.task.id)).size !== cohortTaskIds.size ||
+            preparedUpdates.some(p => !cohortTaskIds.has(p.task.id)))) {
+            outcome = 'rejected';
+            return state;
+        }
+        if (preparedUpdates.length === 0) return state;
         if (barOperationId && cohortTaskIds && preparedUpdates.every(({ task, canonicalUpdates }) =>
             Object.entries(canonicalUpdates).every(([field, value]) => Object.is(task[field as keyof Task], value))
         )) return state;
@@ -2392,6 +2401,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     Boolean(cohortTaskIds && cohortTaskIds.size > 1 && autoScheduleMoveMode === AutoScheduleMoveMode.LinkedDownstreamShift)
                 );
                 if (depResult.error) {
+                    outcome = 'rejected';
                     notifyDragError(depResult.error, barOperationId);
                     return state;
                 }
@@ -2447,6 +2457,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 cohortSet
             );
             if (cascadingUpdates.error) {
+                outcome = 'rejected';
                 notifyDragError(cascadingUpdates.error, barOperationId);
                 return state;
             }
@@ -2460,6 +2471,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const edges = buildSchedulingEdges(effectiveRelations);
             const cycleTaskIds = detectSchedulingCycleTaskIds(edges);
             if ([...cohortTaskIds].some(id => cycleTaskIds.has(id))) {
+                outcome = 'rejected';
                 notifyDragError(i18n.t('label_scheduling_state_cyclic') || 'This task participates in a dependency cycle.', barOperationId);
                 return state;
             }
@@ -2476,6 +2488,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 return after > before;
             });
             if (worsened) {
+                outcome = 'rejected';
                 notifyDragError(
                     i18n.t('label_auto_schedule_external_conflict') || 'Moving linked tasks would violate an external dependency.', barOperationId
                 );
@@ -2483,6 +2496,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             }
         }
 
+        outcome = 'applied';
         const changedTaskIds = new Set([...preparedUpdates.map(p => p.task.id), ...pendingUpdates.keys()]);
         const finalTaskById = new Map<string, Task>();
         const taskChanges: Array<[Task, Task]> = [];
@@ -2632,7 +2646,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
             localTaskPatches: nextLocalTaskPatches,
             barOperations
         };
-    }),
+        });
+        return outcome;
+    },
 
     updateTask: (id, updates, mutationIntent = updates, datePlacementMode, barOperationId) => {
         get().updateTasks([{ id, updates, mutationIntent, datePlacementMode }], undefined, barOperationId);
@@ -3800,6 +3816,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         const operation = (async () => {
             while (true) {
+                // Never capture provisional bar patches, including on the next
+                // iteration of a save that started before this drag.
+                while (get().activeBarOperationId) {
+                    await new Promise<void>((resolve) => {
+                        const unsubscribe = useTaskStore.subscribe((state) => {
+                            if (state.activeBarOperationId) return;
+                            unsubscribe();
+                            resolve();
+                        });
+                    });
+                }
                 const snapshot = get();
                 if (snapshot.modifiedTaskIds.size === 0 && !hasPendingRelationChanges(snapshot.pendingRelationChanges)) return new Map<string, string>();
                 relationWorkCaptured = relationWorkCaptured || hasPendingRelationChanges(snapshot.pendingRelationChanges);
