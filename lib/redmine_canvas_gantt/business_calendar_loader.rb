@@ -243,19 +243,7 @@ module RedmineCanvasGantt
         next if row.empty?
 
         date_value = row[0]
-        if date_value.nil? || date_value.empty?
-          raise configuration_error("#{path}: row #{index + 1}: first column must contain a date",
-                                    file: path, code: 'INVALID_DATE', line: index + 1,
-                                    detail: 'The first column must contain a date.')
-        end
-        unless CSV_DATE_PATTERN.match?(date_value)
-          raise configuration_error("#{path}: row #{index + 1}: date must use YYYY/M/D",
-                                    file: path, code: 'INVALID_DATE', line: index + 1,
-                                    value: date_value, detail: 'Date must use YYYY/M/D.')
-        end
-
-        year, month, day = date_value.split('/').map(&:to_i)
-        date = Date.new(year, month, day)
+        date = parse_csv_date(date_value, path, line: index + 1)
         if days.key?(date)
           raise configuration_error("#{path}: row #{index + 1}: duplicate date #{date.iso8601}",
                                     file: path, code: 'DUPLICATE_DATE', line: index + 1,
@@ -288,6 +276,22 @@ module RedmineCanvasGantt
       raise configuration_error("#{path}: #{e.message}", file: path, code: 'INVALID_CSV',
                                 line: e.respond_to?(:line_number) ? e.line_number : nil,
                                 detail: 'The holiday CSV could not be parsed.')
+    end
+
+    def parse_csv_date(value, path, line:)
+      if value.nil? || value.empty?
+        raise configuration_error("#{path}: row #{line}: first column must contain a date",
+                                  file: path, code: 'INVALID_DATE', line: line,
+                                  detail: 'The first column must contain a date.')
+      end
+      unless CSV_DATE_PATTERN.match?(value)
+        raise configuration_error("#{path}: row #{line}: date must use YYYY/M/D",
+                                  file: path, code: 'INVALID_DATE', line: line,
+                                  value: value, detail: 'Date must use YYYY/M/D.')
+      end
+
+      year, month, day = value.split('/').map(&:to_i)
+      Date.new(year, month, day)
     end
 
     def normalize_calendar(data, path)
