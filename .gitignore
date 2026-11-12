@@ -8,7 +8,7 @@ docs/*
 !docs/demo-current.gif
 !docs/architecture/
 docs/architecture/*
-!docs/architecture/timer-session-architecture.png
+!docs/architecture/timer-session-architecture.md
 graphify-out/
 spec-docs/
 DESIGN.md

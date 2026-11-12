@@ -45,5 +45,5 @@
 - [旧日本語操作マニュアル](manual_ja.md) は既存リンク用の移行資料として保存し、同期しない。付属画像・旧デモもリンク維持のため残す。
 - [共有 TimerSession 契約の旧入口](timer-session-contract.md) は、新しいタイマー仕様への互換リンクを維持する。
 - README が使用する `demo-current.gif` と、その生成方法を管理する [マニュアル保守手順](../website/MAINTENANCE.md) は維持する。
-- `architecture/timer-session-architecture.png` は過去の設計図として保存する。現行契約は機能別のタイマー仕様を参照し、この画像を同期対象の正本にはしない。
+- 旧タイマー構成図の PNG は [Mermaid のアーキテクチャー図](architecture/timer-session-architecture.md) に置き換えた。図は機能別のタイマー仕様と併せて更新する。
 - `.gitignore` は入口・機能別仕様・共有タイマー契約の互換入口を追跡対象とする。過去のローカル作業資料を再び正本に混在させない。
