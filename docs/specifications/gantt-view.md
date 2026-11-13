@@ -1,44 +1,58 @@
-# ガント表示仕様
+<a id="ガント表示仕様"></a>
 
-対象: 開発 HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`（2026-11-13、コード 0.20.0）。公開マニュアルは v0.19.0 を対象とする。本書は開発時点の挙動を記録する。
+# Gantt Display and Interaction
 
-## 表示モデル
+Reference: development HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22` (2026-11-13, code 0.20.0). This document records behavior at that development reference; the specification index identifies the public manual's current target version.
 
-左の一覧と右の Canvas チャートは同じ行レイアウトと縦スクロール位置を共有する。ヘッダー、背景、ベースライン、タスク、オーバーレイを分けて描画する。タスクには開始・期日、進捗、親 ID、プロジェクト、担当者、表示順などがあり、レイアウトが行番号・インデント・子の有無を導出する。表示用の子の有無と、Redmine の実際の子の存在を示す `hasPhysicalChildren` は別である。読み込んだグラフだけから実際の親子関係や親の日付の編集可否を推測しない。
+<a id="表示モデル"></a>
 
-ロード済み `allTasks` に現在のフィルターを適用し、グループ化、並び順、折りたたみ、バージョン設定から `tasks`、`layoutRows`、`rowCount` を作る。`layoutRows` はチケット以外のグループ・バージョン見出しも表す。クライアント側の表示対象と Redmine 側の取得・可視性の契約は別である。
+## Display model
 
-## 階層・グループ・順序
+The left list and right Canvas chart share row layout and vertical scroll position. Headers, background, baselines, tasks, and overlays render separately. Tasks carry start/due dates, progress, parent ID, project, assignee, display order, and other fields. Layout derives row number, indentation, and whether displayed children exist. Displayed children differ from `hasPhysicalChildren`, which represents actual Redmine children. Do not infer physical hierarchy or parent-date editability solely from the loaded graph.
 
-- グループはプロジェクト、担当者、なしのいずれか。プロジェクトと担当者のグループ化は排他的。担当者未設定には専用グループを使う。
-- 親が表示対象に存在し、グループなしまたは同じグループの場合、子を親の下に置く。親が対象外または別グループの場合、その子は表示上のルートとなる。これは Redmine の親子関係を書き換える操作ではない。
-- バージョン表示を有効にするとバージョン行を設けられる。プロジェクト／担当者、バージョン、タスクごとに展開状態を持ち、折りたたむと子孫を非表示にする。全展開・全折りたたみもある。
-- 並べ替えは設定されたキーと方向を用い、カスタムフィールドの数値・真偽・日付も型に応じて比較する。設定がない場合は表示順を使う。依存関係に基づく整理も選べる。
-- 親の表示日付は子からサーバー側で導出され得る。表示の階層再構成を理由にクライアントで親日付の mutation を生成しない。
+Current filters are applied to loaded `allTasks`; grouping, sorting, expansion, and version settings produce `tasks`, `layoutRows`, and `rowCount`. `layoutRows` also represents group/version headers rather than issues. Client display selection and Redmine retrieval/visibility contracts are separate.
 
-## ズームと操作
+<a id="階層グループ順序"></a>
 
-ツールバーの月・週・日にはそれぞれ zoom level 0・1・2 が対応し、切替時はそのレベルのカスタム倍率または既定倍率を適用し表示中心を調整する。チャート上の Ctrl / Meta とホイールで連続倍率を変え、通常のホイールでスクロールする。
+## Hierarchy, grouping, and order
 
-一覧行の右クリックは対象チケットのコンテキストメニューを開く。チャートのキー操作では上下矢印が表示タスクの選択を移動し、選択がない場合の下矢印は先頭を選ぶ。左右矢印は横スクロール、Escape はドラッグを中止し選択を解除する。入力・スクロールのロック状態による制約がある。
+- Group by project, assignee, or neither. Project and assignee grouping are mutually exclusive. Unassigned issues use a dedicated group.
+- A child appears under its parent if the parent is displayed and grouping is disabled or both share a group. If the parent is excluded or in another group, the child becomes a display root. This does not rewrite the Redmine hierarchy.
+- Enabling version display can add version rows. Projects/assignees, versions, and tasks have expansion state; collapsing hides descendants. Expand-all and collapse-all actions are also available.
+- Sorting uses the configured key and direction, comparing numeric, boolean, and date custom fields by type. Without a setting, display order is used. Organizing by dependencies is also available.
+- Server-derived parent dates may depend on children. Reconstructing display hierarchy must not generate parent-date mutations on the client.
 
-## 選択と移動
+<a id="ズームと操作"></a>
 
-一覧行の通常クリックは単一選択、Ctrl / Meta は選択の追加・解除、Shift はアンカーから対象までの表示タスク順の範囲選択。アンカーまたは対象が現在の表示タスクにない場合は対象だけを選ぶ。選択変更は選択中の関係、入力途中の `draftRelation`、コンテキストメニューをクリアする。手動保存待ちの関係操作 `pendingRelationChanges` は別の状態であり、選択変更だけでは消えない。複数選択と主選択 ID を区別する。
+## Zoom and navigation
 
-チケットへのフォーカス操作は、対象が存在しなければ `missing`、現在のフィルターに合わなければ `filtered_out` を返す。対象の親、グループ、バージョンを展開し、再レイアウト後に選択とビューポートを移動する。横方向の基準は開始日、なければ期日、どちらもなければ今日。表示のためにフィルターを勝手に解除しない。
+Toolbar month/week/day views correspond to zoom levels 0/1/2. Switching applies that level's custom or default scale and adjusts the display center. Ctrl / Meta plus the chart mouse wheel changes scale continuously; the ordinary wheel scrolls.
 
-行の展開・折りたたみやスクロールは表示状態の操作であり、チケットの保存を意味しない。日付のみの値は UTC midnight を暦日の内部表現として使用し、表示時に明示的にローカル表示へ変換する。
+Right-clicking a list row opens its issue context menu. In chart keyboard handling, up/down arrows move selection among displayed tasks; down selects the first task if none is selected. Left/right arrows scroll horizontally. Escape cancels dragging and clears selection. Input and scroll locks impose additional constraints.
 
-## アクセシビリティ
+<a id="選択と移動"></a>
 
-Canvas とは別に視覚的に隠れたタスクリストを提供し、件名、開始・終了、進捗を読み上げ可能なラベルに含める。各行には全体件数と位置を設定する。フォーカス行の周囲と先頭・末尾などを仮想化して描画し、行が消えた場合は残った近傍行へのフォーカス回復を試みる。Tab / Shift+Tab で表示タスク間を進み、Enter は対象の詳細を示すアラートを出す。展開ボタンには展開／折りたたみのラベルを付ける。
+## Selection and focus
 
-これらの実装が存在することは、すべての支援技術や操作のアクセシビリティ適合を保証しない。
+An ordinary list-row click selects one task. Ctrl / Meta adds or removes selection; Shift selects the visible-task range from anchor to target. If the anchor or target is absent from current visible tasks, only the target is selected. Selection changes clear the selected relation, unfinished `draftRelation`, and context menu. Manually pending relation operations in `pendingRelationChanges` are separate and survive selection changes. Multiple selection and the primary selected ID are distinct.
 
-## 実装と確認先
+Focusing an issue returns `missing` if it does not exist and `filtered_out` if it fails current filters. The operation expands its parents, group, and version; after relayout, it updates selection and viewport. Horizontal positioning uses start date, then due date, then today. It does not silently clear filters to display the issue.
 
-- [レイアウト構築](../../spa/src/stores/taskStore/layout.ts)、[展開状態](../../spa/src/stores/taskStore/expansion.ts)、[階層補助](../../spa/src/stores/taskStore/hierarchy.ts)、[TaskStore](../../spa/src/stores/TaskStore.ts)、[データ型](../../spa/src/types/index.ts)
-- [ガントコンテナ](../../spa/src/components/GanttContainer.tsx)、[一覧](../../spa/src/components/UiSidebar.tsx)、[座標と表示範囲](../../spa/src/engines/LayoutEngine.ts)、[アクセシビリティ層](../../spa/src/components/A11yLayer.tsx)
-- [アクセシビリティテスト](../../spa/src/components/A11yLayer.test.tsx)、[一覧テスト](../../spa/src/components/UiSidebar.test.tsx)、[レイアウトエンジンテスト](../../spa/src/engines/LayoutEngine.test.ts)、[TaskStore テスト](../../spa/src/stores/TaskStore.test.ts)
-- 参照は実装・テストの所在を示す。今回それらを実行したという意味ではない。
+Expansion, collapse, and scrolling change display state; they do not save issues. Date-only values use UTC midnight as an internal calendar-date representation and explicitly convert at local display boundaries.
+
+<a id="アクセシビリティ"></a>
+
+## Accessibility
+
+A visually hidden task list accompanies the Canvas. Accessible labels include subject, start/end dates, and progress. Each row records total count and position. Rendering virtualizes rows around focus and selected boundary rows such as the first/last; when a row disappears, focus recovery attempts a nearby remaining row. Tab / Shift+Tab navigates visible tasks; Enter shows an alert with issue details. Expansion buttons have expand/collapse labels.
+
+The presence of these implementations does not guarantee accessibility conformance for all assistive technologies or interactions.
+
+<a id="実装と確認先"></a>
+
+## Implementation and verification references
+
+- [Layout construction](../../spa/src/stores/taskStore/layout.ts), [expansion state](../../spa/src/stores/taskStore/expansion.ts), [hierarchy helpers](../../spa/src/stores/taskStore/hierarchy.ts), [TaskStore](../../spa/src/stores/TaskStore.ts), [types](../../spa/src/types/index.ts)
+- [Gantt container](../../spa/src/components/GanttContainer.tsx), [sidebar](../../spa/src/components/UiSidebar.tsx), [coordinates and viewport](../../spa/src/engines/LayoutEngine.ts), [accessibility layer](../../spa/src/components/A11yLayer.tsx)
+- [Accessibility tests](../../spa/src/components/A11yLayer.test.tsx), [sidebar tests](../../spa/src/components/UiSidebar.test.tsx), [layout engine tests](../../spa/src/engines/LayoutEngine.test.ts), [TaskStore tests](../../spa/src/stores/TaskStore.test.ts)
+- References identify implementation and tests; they do not mean those tests were run during this update.

@@ -1,55 +1,69 @@
-# クエリとプロジェクト範囲の現行仕様
+<a id="クエリとプロジェクト範囲の現行仕様"></a>
 
-対象: 開発 HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`（コード 0.20.0、2026-11-13）。公開マニュアルはタグ v0.20.0（`0c2b68a`）を対象とし、この開発者向け記録の確認コミットとは区別する。
+# Queries and Project Scope
 
-## 境界と状態
+Reference: development HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22` (code 0.20.0, 2026-11-13). The public manual covers tag v0.20.0 (`0c2b68a`); distinguish it from this developer record's reviewed commit.
 
-- 画面のルートプロジェクトとその子孫が通常の範囲である。Redmine の可視性も適用する。
-- プロジェクト候補は可視かつ有効なプロジェクトに限定される。通常モードはツリー内、メンバーモードは所属するプロジェクトを候補とする。所属には通常のグループ所属を含み、管理者は可視かつ有効な全プロジェクトが候補となる。
-- ツリー外への読み取り範囲の拡張は、メンバーモードで明示選択された許可対象に限る。候補一覧の存在自体は範囲拡張を意味しない。
-- `canvas_project_ids` または互換の `project_ids` の指定有無が明示選択を決める。未指定時は `show_subprojects` に従い、ツリーまたはルートを使う。明示された空選択は全件ではなく空範囲である。
-- ID は正の整数、区切り `,` / `|`、空値、`none` / `_none` を受け付け、その他のトークンは 422 となる。要求 ID は許可範囲との積集合に制限される。
-- サーバーは `project_scope` に `root_project_id`、`candidate_mode`、`selection_explicit`、`selected_project_ids`、`effective_project_ids`、`scheduling_allowed` を返す。未明示の場合、選択 ID は空でも実効 ID は空とは限らない。
+<a id="境界と状態"></a>
 
-## フィルターと保存クエリ
+## Boundaries and state
 
-- `GET /projects/:project_id/canvas_gantt/data.json` がデータと解決済み初期状態を返し、`queries.json` が選択可能な保存クエリを供給する。
-- クエリ状態はベースの `query_id` と明示上書きからなる。保存クエリ選択時には旧上書きを消し、フィルターの変更はそのベースからの差分として保持する。保存クエリの解除は実効上書きを独立した状態へ移す。
-- 状態、担当者、バージョン、トラッカーの上書きは継承、全件、部分集合を表せる。担当者未設定は `null`、バージョン未設定は `_none` で表現する。
-- サーバーは可視な Redmine `IssueQuery` の条件を適用し、リクエストの明示値で上書きした後、プロジェクト境界を再適用する。不可視・存在しないクエリや解決失敗は警告を返して保存クエリなしで続行する。
-- 保存クエリの `=` 条件が空で、同じフィールドの上書きもない場合は該当なしとして扱う。明示的な全件への変更とは異なる。
-- 実際の選択は Redmine の issue 可視性と解決したプロジェクト範囲の両方を通る。操作時の範囲は表示フィルターそのものではない。
+- The normal scope is the view's root project and its descendants, subject to Redmine visibility.
+- Project candidates must be visible and active. Normal mode offers projects in the tree; membership mode offers projects the user belongs to, including ordinary group membership. Administrators can choose all visible, active projects.
+- Read scope expands outside the tree only to explicitly selected, permitted projects in membership mode. A project appearing in the candidate list does not itself expand scope.
+- The presence of `canvas_project_ids` or its compatibility alias `project_ids` determines explicit selection. Without either, `show_subprojects` selects the tree or root. An explicitly empty selection means empty scope, not all projects.
+- IDs accept positive integers, separators `,` / `|`, empty values, and `none` / `_none`; other tokens return 422. Requested IDs are intersected with the permitted scope.
+- The server returns `project_scope` containing `root_project_id`, `candidate_mode`, `selection_explicit`, `selected_project_ids`, `effective_project_ids`, and `scheduling_allowed`. Without explicit selection, empty selected IDs do not necessarily mean empty effective IDs.
 
-### 画面操作と Redmine クエリ編集
+<a id="フィルターと保存クエリ"></a>
 
-- ツールバーにはプロジェクト、トラッカー、バージョン、担当者、ステータスの選択がある。プロジェクトは候補検索、可視候補の一括選択、メンバーモード、グループ化を提供する。候補外に隠れている選択は警告する。ステータスには完了・未完了の選択操作がある。バージョンには未設定とヘッダー表示、担当者には未割り当てと担当者別グループ化がある。
-- 検索テキストは画面のクイックフィルターであり、保存クエリの条件と区別する。プロジェクト別と担当者別のグループ化、子プロジェクト表示、列、並び順は共有表示状態にも関わる。
-- 保存クエリメニューは読み込み中・失敗・空を表示し、選択中クエリに上書きがあると変更済みを示す。「クリア」は選択を解除する操作で、Redmine の保存クエリそのものの削除ではない。
-- カスタムクエリ保存は現在の状態を Redmine issue 一覧のパラメーターへ変換し、既存 `query_id` を除いて iframe で開く。Redmine クエリ編集への別操作は現在の ID を含むパスへ遷移する。Redmine 側のクエリ編集・削除操作と権限は Redmine に委ね、Canvas 専用のクエリ削除 API はない。
-- iframe の `#query_form` は検索フォーム、`#query-form` は保存フォームとして区別し、後者に到達した場合だけフッターに保存ボタンを出す。保存はネイティブフォームを送信し、検証エラーなら再送できる。成功遷移後またはダイアログを閉じたときに保存クエリ一覧の再読込を促す。
+## Filters and saved queries
 
-### 並び順と列の対応
+- `GET /projects/:project_id/canvas_gantt/data.json` returns data and resolved initial state; `queries.json` supplies selectable saved queries.
+- Query state consists of a base `query_id` and explicit overrides. Selecting a saved query clears previous overrides; filter changes remain differences from the base. Clearing the saved query transfers effective overrides to independent state.
+- Status, assignee, version, and tracker overrides can represent inheritance, all values, or a subset. An unassigned issue is represented by `null`; an unset version by `_none`.
+- The server applies a visible Redmine `IssueQuery`, overrides it with explicit request values, then reapplies project boundaries. An invisible or missing query, or resolution failure, produces warnings and continues without the saved query.
+- An empty `=` condition in a saved query means no matches unless the same field is overridden. This differs from explicitly selecting all values.
+- Actual selection must satisfy both Redmine issue visibility and resolved project scope. Operation scope is not identical to display filters.
 
-並び順の既定は開始日昇順。URL codec は Redmine 名 `id`, `subject`, `project`, `tracker`, `status`, `priority`, `assigned_to`, `author`, `start_date`, `due_date`, `estimated_hours`, `done_ratio`, `fixed_version`, `category`, `created_on`, `updated_on`, `spent_hours` を対応する Canvas フィールドに変換する。方向は `desc` 以外を昇順とし、入力の最初の並び順を解釈する。
+<a id="画面操作と-redmine-クエリ編集"></a>
 
-列の変換対象は上記の Redmine 対応列と `cf_<id>` カスタムフィールドである。Canvas 内部では `cf:<id>` を使う。タイマーと通知列には Redmine 列名がなく、Redmine クエリの列としては出力できない。列カタログと並び順の対応表は別々なので、それぞれの実装を参照する。
+### Controls and Redmine query editing
 
-## URL と保存設定
+- The toolbar provides project, tracker, version, assignee, and status selectors. Projects support candidate search, bulk selection of visible candidates, membership mode, and grouping. Hidden selections outside the candidate list produce a warning. Statuses provide open/closed selection actions. Versions include unset values and header display; assignees include unassigned values and grouping by assignee.
+- Search text is a view quick filter, distinct from saved-query conditions. Project/assignee grouping, subproject display, columns, and sorting also affect shared view state.
+- The saved-query menu shows loading, failure, and empty states and marks a selected query as modified when overrides exist. “クリア” (Clear in the Japanese UI) removes the selection; it does not delete the Redmine saved query.
+- Saving a custom query converts current state to Redmine issue-list parameters, removes the existing `query_id`, and opens an iframe. A separate Redmine query-edit action navigates to a path containing the current ID. Query editing/deletion and permissions remain Redmine responsibilities; there is no Canvas-specific query deletion API.
+- In the iframe, `#query_form` is the search form and `#query-form` the save form. A footer save button appears only after reaching the latter. Saving submits the native form; validation errors allow resubmission. A successful navigation or closing the dialog triggers a saved-query list refresh.
 
-初期の共有クエリ状態は、対応する URL パラメーターが存在すれば URL 全体を優先し、なければ正規化した保存状態、最後にデフォルトを使う。URL と保存状態をフィールドごとに混合しない。
+<a id="並び順と列の対応"></a>
 
-- `query_id`、フィルター、`group_by`、`sort`、`show_subprojects`、`c[]` または Redmine の `set_filter=1` と `f[]` が共有状態の存在判定に使われる。
-- Redmine 形式の値と Canvas 固有形式が同時にあれば、対応フィールドは Redmine 形式を優先する。配列キーや単数形の互換キーも読み取る。
-- 明示空プロジェクトは `canvas_project_ids[]=none` として出力し、未指定と区別する。担当者やバージョンの `none` は未設定値を意味するので混同しない。
-- ブラウザー URL の更新は制御対象パラメーターだけを置き換え、他のクエリとハッシュを維持する。メンバーモードはこの URL 更新には含めない。
-- 設定は `localStorage` の `canvasGantt:preferences` に保存され、プロジェクト単位の一般設定と表示設定を持つ。破損 JSON は空設定として扱い、旧形式は正規化時に移行する。
-- サーバーの解決結果はクライアントの希望ではなく確定範囲として扱う。非同期読み込みでは世代と表示コンテキストを照合して古い応答を採用しない。
+### Sort and column mapping
 
-## 実装と回帰確認箇所
+The default sort is ascending start date. The URL codec maps Redmine names `id`, `subject`, `project`, `tracker`, `status`, `priority`, `assigned_to`, `author`, `start_date`, `due_date`, `estimated_hours`, `done_ratio`, `fixed_version`, `category`, `created_on`, `updated_on`, and `spent_hours` to Canvas fields. Any direction other than `desc` is ascending; the first input sort is interpreted.
 
-- [範囲ポリシー](../../lib/redmine_canvas_gantt/project_scope_policy.rb)、[クエリ解決](../../lib/redmine_canvas_gantt/query_state_resolver.rb)、[issue 選択](../../lib/redmine_canvas_gantt/issue_selector.rb)
-- [URL と初期優先順位](../../spa/src/utils/queryParams.ts)、[URL codec](../../spa/src/query/canvasQueryUrlCodec.ts)、[クエリ状態](../../spa/src/query/queryState.ts)、[設定](../../spa/src/utils/preferences.ts)
-- [ツールバー](../../spa/src/components/GanttToolbar.tsx)、[Redmine 形式への変換](../../spa/src/query/redmineQueryUrlCodec.ts)、[列カタログ](../../spa/src/components/sidebar/sidebarColumnCatalog.ts)、[並び順 codec](../../spa/src/query/querySortCodec.ts)、[フォームダイアログ](../../spa/src/components/IssueIframeDialog.tsx)
-- [サーバー仕様テスト](../../spec/lib/redmine_canvas_gantt/query_state_resolver_spec.rb)、[URL テスト](../../spa/src/utils/queryParams.test.ts)、[クエリ codec テスト](../../spa/src/query/queryStateCodec.test.ts)
+Column conversion covers the corresponding Redmine columns above and `cf_<id>` custom fields. Canvas uses `cf:<id>` internally. Timer and notification columns have no Redmine column names and cannot be exported as Redmine query columns. The column catalog and sort mapping are separate; consult each implementation.
 
-この文書は実装とテストコードを根拠とする静的記録であり、今回テストを実行したことを意味しない。
+<a id="url-と保存設定"></a>
+
+## URLs and stored preferences
+
+For initial shared query state, the presence of a supported URL parameter makes the entire URL state take precedence; otherwise normalized stored state is used, then defaults. Do not merge URL and stored state field by field.
+
+- `query_id`, filters, `group_by`, `sort`, `show_subprojects`, `c[]`, or Redmine's `set_filter=1` with `f[]` determine whether shared state exists.
+- When Redmine-format and Canvas-specific values coexist, Redmine format wins for the corresponding fields. Array keys and singular compatibility keys are also read.
+- Explicitly empty project scope is emitted as `canvas_project_ids[]=none`, distinct from omission. Assignee/version `none` means an unset value; do not confuse these meanings.
+- Browser URL updates replace only controlled parameters and preserve other query parameters and the hash. Membership mode is excluded from this URL update.
+- Preferences are stored in `localStorage` under `canvasGantt:preferences`, with general and display preferences per project. Corrupt JSON becomes empty preferences; legacy formats migrate during normalization.
+- Treat server resolution as the confirmed scope, not merely the client's requested scope. Async loading checks generation and view context and rejects stale responses.
+
+<a id="実装と回帰確認箇所"></a>
+
+## Implementation and regression references
+
+- [Scope policy](../../lib/redmine_canvas_gantt/project_scope_policy.rb), [query resolution](../../lib/redmine_canvas_gantt/query_state_resolver.rb), [issue selection](../../lib/redmine_canvas_gantt/issue_selector.rb)
+- [URL and initial precedence](../../spa/src/utils/queryParams.ts), [URL codec](../../spa/src/query/canvasQueryUrlCodec.ts), [query state](../../spa/src/query/queryState.ts), [preferences](../../spa/src/utils/preferences.ts)
+- [Toolbar](../../spa/src/components/GanttToolbar.tsx), [Redmine conversion](../../spa/src/query/redmineQueryUrlCodec.ts), [column catalog](../../spa/src/components/sidebar/sidebarColumnCatalog.ts), [sort codec](../../spa/src/query/querySortCodec.ts), [form dialog](../../spa/src/components/IssueIframeDialog.tsx)
+- [Server specification tests](../../spec/lib/redmine_canvas_gantt/query_state_resolver_spec.rb), [URL tests](../../spa/src/utils/queryParams.test.ts), [query codec tests](../../spa/src/query/queryStateCodec.test.ts)
+
+This document is a static record based on implementation and test code. It does not mean those tests were run during this documentation update.

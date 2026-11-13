@@ -1,49 +1,61 @@
-# Redmine Canvas Gantt 開発仕様書
+# Redmine Canvas Gantt Development Specifications
 
-このディレクトリの機能別仕様書を、**現行実装の開発仕様の正本**とする。機能の振る舞い、状態遷移、権限、API、保存・回復の契約を管理する。
+The feature specifications in this directory are the **canonical development specifications for the current implementation**. They cover feature behavior, state transitions, permissions, APIs, and persistence and recovery contracts.
 
-## 基準と読み方
+<a id="基準と読み方"></a>
 
-- 確認日: 2026-11-13。
-- 初回整理の基準コミット: `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`。
-- 基準コードのプラグインバージョン: `0.20.0`。初回整理時はタグ `v0.19.0` の12コミット先を対象とした。現在の公開マニュアルはタグ `v0.20.0`（`0c2b68a`）を対象とし、開発仕様の各ページに記載した確認コミットとは区別する。
-- 公開操作マニュアルは [日本語](../website/ja/index.md)・[English](../website/en/index.md) が正本。現在のマニュアル対象は v0.20.0。
-- 仕様書の実装・テスト参照は根拠への入口であり、リンクされた全テストの実行成功や全環境での動作確認を意味しない。
-- 現行実装と将来の要求を混ぜない。未解決事項や未検証の制約は、各機能の制限事項として明記する。
+## Scope and reference points
 
-## 機能別仕様
+- Review date: 2026-11-13.
+- Initial reference commit: `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`.
+- Plugin version of the reference code: `0.20.0`. The initial specifications covered the commit 12 commits after tag `v0.19.0`. The public manual now covers tag `v0.20.0` (`0c2b68a`); distinguish it from the reviewed commit recorded in each development specification.
+- The canonical public user manuals are [Japanese](../website/ja/index.md) and [English](../website/en/index.md). They currently cover v0.20.0.
+- Implementation and test references provide entry points to the supporting evidence. They do not mean that all linked tests passed or that behavior was verified in every environment.
+- Keep current implementation separate from future requirements. Record unresolved issues and unverified constraints in the limitations of the relevant specification.
 
-| 仕様書 | 責務・主な内容 |
+<a id="機能別仕様"></a>
+
+## Feature specifications
+
+The feature specifications and maintained architecture document are in English. Their translation preserves the original review dates and reference commits; translation alone is not a new review of implementation behavior.
+
+| Specification | Responsibilities and scope |
 | --- | --- |
-| [全体構成・共通契約](specifications/architecture.md) | Rails／SPA の境界、起動、取得・更新、日付、非同期処理、データ上限 |
-| [表示範囲・フィルター・保存クエリ](specifications/query-scope.md) | 対象プロジェクト、抽出条件、URL、保存クエリ、状態の引継ぎ |
-| [ガント表示・操作](specifications/gantt-view.md) | 階層・グループ行、選択、移動、ズーム、画面操作 |
-| [チケット編集・ダイアログ](specifications/issue-editing.md) | インライン編集、編集候補とプレビュー、ダイアログ、プロジェクト移動、削除 |
-| [子チケット一括作成](specifications/bulk-subtasks.md) | 入力、属性継承、親の保存との順序、失敗時の扱い |
-| [保存・競合回復](specifications/persistence.md) | サーバー状態とローカル編集、自動／手動保存、競合、古い応答、ロールバック |
-| [日程変更・依存関係](specifications/scheduling.md) | ドラッグ・リサイズ・複数選択移動、関連、日程調整、クリティカルパス |
-| [営業日カレンダー](specifications/calendars.md) | YAML／CSV、継承、プロジェクト割当、再読込、リビジョン |
-| [ベースライン](specifications/baseline.md) | スナップショット、比較、保存・削除、権限、鮮度 |
-| [ワークロード](specifications/workload.md) | 計画・実績、集計、対象範囲、表示とキャッシュ |
-| [作業タイマー・時間記録](specifications/timer.md) | セッション、タブ間・プラグイン間共有、記録確認と復旧 |
-| [表示設定・エクスポート](specifications/display-export.md) | 表示設定の適用・保存範囲、画面設定、画像・データ出力 |
-| [権限・設定・実行環境](specifications/permissions-settings.md) | 操作権限、認証、固定設定、対応環境、ビルドとアセット配信 |
+| [Architecture and shared contracts](specifications/architecture.md) | Rails/SPA boundaries, startup, reads and writes, dates, asynchronous operations, data limits |
+| [View scope, filters, and saved queries](specifications/query-scope.md) | Project scope, filtering, URLs, saved queries, state preservation |
+| [Gantt display and interaction](specifications/gantt-view.md) | Hierarchies and group rows, selection, movement, zoom, screen interactions |
+| [Issue editing and dialogs](specifications/issue-editing.md) | Inline editing, edit options and previews, dialogs, project moves, deletion |
+| [Bulk child issue creation](specifications/bulk-subtasks.md) | Input, inherited attributes, ordering relative to parent saves, failure handling |
+| [Persistence and conflict recovery](specifications/persistence.md) | Server state and local edits, automatic/manual saving, conflicts, stale responses, rollback |
+| [Scheduling and dependencies](specifications/scheduling.md) | Dragging, resizing, moving multiple selected issues, relations, schedule adjustments, critical paths |
+| [Business calendars](specifications/calendars.md) | YAML/CSV, inheritance, project mapping, reloads, revisions |
+| [Baselines](specifications/baseline.md) | Snapshots, comparison, saving and deletion, permissions, freshness |
+| [Workload](specifications/workload.md) | Planned and actual effort, aggregation, scope, display, caching |
+| [Work Timer and time entries](specifications/timer.md) | Sessions, sharing across tabs and plugins, record confirmation and recovery |
+| [Display settings and export](specifications/display-export.md) | Applying and storing preferences, screen settings, image and data export |
+| [Permissions, settings, and runtime](specifications/permissions-settings.md) | Operation permissions, authentication, fixed settings, supported environments, builds and asset delivery |
 
-## 更新ルール
+<a id="更新ルール"></a>
 
-1. 変更対象の機能仕様と、参照先の実装・テストを確認する。
-2. 機能・契約を変える場合は、実装・テストと同じ変更で対応仕様書を更新する。対象文書の確認日と基準コミットも更新する。
-3. 共通ルールは所有する仕様書で定義し、他の文書から参照する。特に保存モデル、日付、権限、表示範囲を機能ごとに再定義しない。
-4. 利用者に見える変更では、公開対象バージョンを確認して日英の website ページも更新する。開発中の機能をリリース済みとして記載しない。
-5. 実装と仕様が食い違う場合は、コード・テスト・再現結果を確認して差異を明示する。提案を実装済みとして追記しない。
-6. 日付別の実装指示・計画・レビューを、このディレクトリに新しい正本として増やさない。変更経緯は Git の履歴で追う。
+## Maintenance rules
 
-## 旧資料と互換パス
+Write new and updated development specifications, the specification index, and maintained architecture documents in English. Preserve code identifiers and exact UI labels where quoted. Continue to maintain the public manual in `website/ja/` and `website/en/`; retain the existing language and paths of archived Japanese manuals and compatibility notices.
 
-以前の変更指示・計画・レビュー・実装記録は、現行コードとの照合後に機能別仕様へ統合し、重複する旧文書を削除した。古い文書の「未実装」や「完了」の記載、当時の計測値は、現在の実装状況や性能保証の根拠にしない。
+1. Check the affected feature specification and its referenced implementation and tests.
+2. Update the relevant specification together with implementation and tests when behavior or contracts change. Update its review date and reference commit as well.
+3. Define shared rules in the specification that owns them and link to it elsewhere. In particular, do not redefine persistence models, dates, permissions, or view scope separately for each feature.
+4. For user-visible changes, verify the public target version and update the corresponding Japanese and English website pages. Do not describe development features as released.
+5. If implementation and specifications differ, examine code, tests, and reproducible behavior, and state the discrepancy. Do not describe proposals as implemented behavior.
+6. Do not create competing canonical documents for dated implementation instructions, plans, or reviews in this directory. Use Git history for the change record.
 
-- [旧日本語操作マニュアル](manual_ja.md) は既存リンク用の移行資料として保存し、同期しない。付属画像・旧デモもリンク維持のため残す。
-- [共有 TimerSession 契約の旧入口](timer-session-contract.md) は、新しいタイマー仕様への互換リンクを維持する。
-- README が使用する `demo-current.gif` と、その生成方法を管理する [マニュアル保守手順](../website/MAINTENANCE.md) は維持する。
-- 旧タイマー構成図の PNG は [Mermaid のアーキテクチャー図](architecture/timer-session-architecture.md) に置き換えた。図は機能別のタイマー仕様と併せて更新する。
-- `.gitignore` は入口・機能別仕様・共有タイマー契約の互換入口を追跡対象とする。過去のローカル作業資料を再び正本に混在させない。
+<a id="旧資料と互換パス"></a>
+
+## Legacy documents and compatibility paths
+
+Earlier implementation instructions, plans, reviews, and implementation records were checked against the current code and consolidated into feature specifications; duplicate documents were removed. Old statements such as “not implemented” or “complete,” and measurements from that time, are not evidence of current implementation status or performance guarantees.
+
+- Keep the [archived Japanese user manual](manual_ja.md) as migration material for existing links; do not synchronize it. Retain its images and historical demo to preserve links.
+- Keep the [legacy shared TimerSession contract entry point](timer-session-contract.md) as a compatibility link to the current timer specification.
+- Retain `demo-current.gif`, which the root READMEs use, and the [manual maintenance guide](../website/MAINTENANCE.md) that documents how to generate it.
+- The old timer architecture PNG was replaced by a [Mermaid architecture diagram](architecture/timer-session-architecture.md). Maintain the diagram alongside the timer specification.
+- `.gitignore` tracks the index, feature specifications, and shared timer contract compatibility entry point. Do not reintroduce earlier local working documents as competing canonical specifications.
