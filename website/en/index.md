@@ -4,6 +4,8 @@ Learn how to install Canvas Gantt, use it day to day, and configure it as an adm
 
 <a id="manual-version"></a>
 
+This manual covers **v0.20.0**. The release tag, implementation, and tests were checked on 2026-11-13.
+
 ## Find a task
 
 - New to the plugin: [Introduction](/en/guide/introduction), [Installation and setup](/en/guide/installation)
@@ -26,5 +28,5 @@ Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. See [Introd
 The plugin targets Redmine 6.0, 6.1, and 7.0 with desktop browsers. Check the [supported environment](/en/guide/introduction#supported-environment); administrators can then follow [Installation and setup](/en/guide/installation).
 
 ::: info Screenshots and videos
-Some images and videos were captured with earlier versions. Controls and display settings may differ in v0.19.0. Follow the text on each page for the current steps.
+Some images and videos were captured with earlier versions. Controls and display settings may differ in v0.20.0. Follow the text on each page for the current steps.
 :::
