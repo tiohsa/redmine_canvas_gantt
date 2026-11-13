@@ -22,6 +22,7 @@
 
 ## Documentation ownership and maintenance
 
+- **Canonical development specifications:** `docs/README.md` indexes the Japanese feature specifications in `docs/specifications/`. These are the maintained source of truth for current implementation behavior, state transitions, permissions, API and persistence contracts. Update the affected specifications alongside feature or contract changes, including internal-only contract changes. Verify against code and tests; distinguish observed implementation, unresolved limitations, and proposed behavior. Record the reviewed commit/date and keep development HEAD separate from the public manual's released version. Do not recreate dated instructions, planning notes, or review reports in `docs/` as competing specifications.
 - **Canonical manual:** `website/ja/` and `website/en/` are the sole maintained public user manual. Keep this static VitePress site, its navigation, configuration, and assets version-controlled here, with dependencies isolated from `spa/`.
 - **README scope:** `README.md` and `README_ja.md` contain the product introduction, feature overview, demo, requirements, minimal installation and Quick Start, and links to the manual and developer information. Update them only when these entry-point details change; put detailed workflows and configuration in Website Docs. Link from README only to the Japanese and English manual homepages; manage installation, feature, settings, and troubleshooting navigation in VitePress. Demo asset and developer-guide links remain appropriate. Preserve existing README anchors and important short safety warnings.
 - **Docs alongside features:** Include the affected Japanese and English Website pages in the same change when visible UI, workflows, permissions, configuration, installation, supported versions, or user-observable behavior changes. Internal-only refactoring need not change docs. Identify any unfinished documentation explicitly rather than describing unfinished functionality as available.
@@ -61,6 +62,7 @@
 
 ## References (open only if relevant)
 
+- `docs/README.md`: current feature specification index and maintenance policy; follow its links to the affected development specifications.
 - `README.md` / `README_ja.md`: product introduction and Quick Start.
 - `docs/manual_ja.md`, `QUERY_PARAMETERS.md` / `QUERY_PARAMETERS_ja.md`: archived manual and query references for link compatibility.
 - `website/`: public manual source, site config, assets, and localized navigation.

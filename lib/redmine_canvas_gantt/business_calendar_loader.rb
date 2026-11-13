@@ -243,19 +243,7 @@ module RedmineCanvasGantt
         next if row.empty?
 
         date_value = row[0]
-        if date_value.nil? || date_value.empty?
-          raise configuration_error("#{path}: row #{index + 1}: first column must contain a date",
-                                    file: path, code: 'INVALID_DATE', line: index + 1,
-                                    detail: 'The first column must contain a date.')
-        end
-        unless CSV_DATE_PATTERN.match?(date_value)
-          raise configuration_error("#{path}: row #{index + 1}: date must use YYYY/M/D",
-                                    file: path, code: 'INVALID_DATE', line: index + 1,
-                                    value: date_value, detail: 'Date must use YYYY/M/D.')
-        end
-
-        year, month, day = date_value.split('/').map(&:to_i)
-        date = Date.new(year, month, day)
+        date = parse_csv_date(date_value, path, line: index + 1)
         if days.key?(date)
           raise configuration_error("#{path}: row #{index + 1}: duplicate date #{date.iso8601}",
                                     file: path, code: 'DUPLICATE_DATE', line: index + 1,
@@ -290,6 +278,22 @@ module RedmineCanvasGantt
                                 detail: 'The holiday CSV could not be parsed.')
     end
 
+    def parse_csv_date(value, path, line:)
+      if value.nil? || value.empty?
+        raise configuration_error("#{path}: row #{line}: first column must contain a date",
+                                  file: path, code: 'INVALID_DATE', line: line,
+                                  detail: 'The first column must contain a date.')
+      end
+      unless CSV_DATE_PATTERN.match?(value)
+        raise configuration_error("#{path}: row #{line}: date must use YYYY/M/D",
+                                  file: path, code: 'INVALID_DATE', line: line,
+                                  value: value, detail: 'Date must use YYYY/M/D.')
+      end
+
+      year, month, day = value.split('/').map(&:to_i)
+      Date.new(year, month, day)
+    end
+
     def normalize_calendar(data, path)
       calendar = data['calendar']
       require_mapping!(calendar, "#{path}: calendar")
@@ -306,7 +310,19 @@ module RedmineCanvasGantt
       validate_calendar_id!(base, "#{path}: calendar.base") unless base.nil?
       validate_managed!(calendar['managed'], path) if calendar.key?('managed')
       week_days = normalize_week_days(calendar['non_working_week_days'], path) if calendar.key?('non_working_week_days')
+      normalized_days = normalize_calendar_days(data, path)
 
+      {
+        id: id.freeze,
+        name: name.freeze,
+        base: base&.freeze,
+        non_working_week_days: week_days,
+        days: normalized_days,
+        path: path.freeze
+      }.freeze
+    end
+
+    def normalize_calendar_days(data, path)
       days = Array(data.fetch('days', []))
       unless data.fetch('days', []).is_a?(Array)
         raise configuration_error("#{path}: days must be an array", file: path)
@@ -334,14 +350,7 @@ module RedmineCanvasGantt
         normalized_days[date] = { name: day_name, type: type }.freeze
       end
 
-      {
-        id: id.freeze,
-        name: name.freeze,
-        base: base&.freeze,
-        non_working_week_days: week_days,
-        days: normalized_days.freeze,
-        path: path.freeze
-      }.freeze
+      normalized_days.freeze
     end
 
     def resolve_calendars(definitions)

@@ -145,3 +145,13 @@ REDMINE_CAPTURE_LOCALE=ja node scripts/capture-display.mjs
 ```
 
 ダウンロードした検証用 PNG は `/tmp/manual-full-export-en.png` と `/tmp/manual-full-export-ja.png` に保存されます。その他の画像・動画は従来の撮影記録のままです。
+
+## v0.20.0 への更新（2026-11-13）
+
+対象を [v0.20.0](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.20.0) に更新しました。GitHub Releases API で公開済みの通常リリースであることを確認しました（公開日時 2026-11-13T03:55:45Z）。ローカルのタグ参照先と確認時の HEAD はともに `0c2b68aea4a0ae02a46d0b3b7d20a7aa1e8ebd58` です。
+
+複数選択したバーの移動、選択の切り替え、カレンダー別の移動、ドラッグの取り消し・保存時の注意を日英の基本操作に整理しました。親日付の手動管理と共有する後続チケットの依存検証も、対象タグに含まれる通常の機能説明へ変更しました。根拠は `InteractionEngine.ts` とそのテスト、`TaskStore.test.ts`、`taskStore/derivedParentDates.test.ts`、および開発仕様のガント表示・日程・永続化です。実装とテストの参照確認であり、Redmine 実環境での再検証やプラグインの全テスト実行を意味しません。
+
+画像・動画は再撮影していません。既存素材の撮影版・撮影記録は維持し、日英トップに旧版の素材を含む旨を表示しています。公開サイトへのデプロイはこのローカル作業には含まれません。
+
+検証: `npm ci --offline --no-audit --no-fund`、`npm run check`（35 Markdown ページ、リンク・アンカー・画像・動画・日英構成・README 互換）、`npm run docs:build`、`npm run test:smoke`（16 件）が成功しました。インストールとブラウザー検証は制限外で実行しました。スモークテストはローカルプレビューを先に起動し、テストプロセスのプロキシ変数を外して実行しています。公開環境や Redmine 本体の動作を検証したものではありません。

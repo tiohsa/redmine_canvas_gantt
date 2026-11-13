@@ -63,9 +63,7 @@ Dependency editor. [View full-size image](/images/relation-editor-en.png)
 
 ## Scheduling behavior
 
-::: warning Development version
 When moving multiple selected issues in linked downstream mode, date proposals for shared successors are merged before dependency constraints are checked. Even when predecessors use different calendars, validation checks whether the final schedule worsens a dependency violation.
-:::
 
 Automatic scheduling and dependency validation use the issue's project calendar. The successor issue's calendar is used for minimum-start checks. See [Business calendars](/en/administration/calendars) for calendar setup.
 
