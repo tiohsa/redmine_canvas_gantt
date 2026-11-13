@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Pin the OS to keep Playwright browser/dependency installation supported.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: website

@@ -1,52 +1,66 @@
-# 工数ペインの現行仕様
+<a id="工数ペインの現行仕様"></a>
 
-対象: HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`、2026-11-13 時点の実装（プラグイン 0.20.0）。公開マニュアルの対象は v0.19.0 である。
+# Workload Pane
 
-## 目的と範囲
+Reference: HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`, implementation as of 2026-11-13 (plugin 0.20.0). The specification index records the public manual's current target version.
 
-ガントに関連するチケットの予定工数と、記録済み作業時間の実績を、担当者・日付別に確認する。予定は SPA がチケットから算出し、実績はサーバーが可視な作業時間を集計して返す。両者は同じチケットのクエリ範囲を基礎とするが、予定の担当者はチケットの担当者、実績の担当者は作業時間を記録したユーザーである。[クエリと範囲](query-scope.md)、[カレンダー](calendars.md)も参照。
+<a id="目的と範囲"></a>
 
-ペインの設定初期値は、1 日の負荷閾値 8 時間、末端チケットのみ有効、終了チケットを含めない、今日以降のみを無効。設定値はローカルのユーザー設定に保存される。末端判定は表示上の子ではなく物理的な子の有無に基づくため、非表示の子がいる親も末端ではない。
+## Purpose and scope
 
-SPA は取得済みタスクに担当者・プロジェクト・バージョン・トラッカー・ステータス・子プロジェクト表示のフィルターを適用し、文脈表示だけの `isContextOnly` チケットを集計から除く。実績 API の結果もこの対象タスクと ID で照合する。親の移動直後の物理階層情報は既存のデータ再取得によって更新される。
+Show planned effort for Gantt issues and actual recorded work by person and date. The SPA calculates planned effort from issues; the server aggregates visible time entries for actual effort. Both use the same issue query scope, but planned effort belongs to the issue assignee while actual effort belongs to the user recording time. See [queries and scope](query-scope.md) and [calendars](calendars.md).
 
-## 予定の計算
+Default pane settings are an eight-hour daily workload threshold, leaf-only enabled, closed issues excluded, and today-onward disabled. Settings persist in local user preferences. Leaf detection uses physical children rather than displayed children, so a parent with hidden children is not a leaf.
 
-[WorkloadLogicService](../../spa/src/services/WorkloadLogicService.ts) は現在対象のチケットを集計する。
+The SPA filters loaded tasks by assignee, project, version, tracker, status, and subproject display and excludes context-only `isContextOnly` issues from aggregation. Actual API results are also matched against these target task IDs. Physical hierarchy after moving a parent refreshes through the existing data-refetch path.
 
-1. 担当者、正の予定工数、有効な開始日と期日が必要。開始日が期日より後なら除外する。
-2. 末端のみ・終了チケット・今日以降の設定を適用する。チケットごとのプロジェクトカレンダーを使い、開始日から期日までの両端を含む営業日を求める。
-3. `予定工数 / 全営業日数` を各営業日に均等配分する。表示範囲や今日以降で切る前の全営業日数を分母に使うため、部分表示で 1 日あたりの配分は変わらない。営業日がなければ配分しない。
-4. 担当者・日ごとに配分を合計し、期間内の合計とピーク、チケットごとの寄与を保持する。
+<a id="予定の計算"></a>
 
-例えば営業日が月〜金の 5 日間で予定 10 時間なら各日 2 時間。水〜金だけを表示すると合計は 6 時間であり、10 時間を 3 日に再配分しない。日付は日時へのタイムゾーン変換ではなく暦日として扱う。
+## Planned effort calculation
 
-## 実績の取得と計算
+[WorkloadLogicService](../../spa/src/services/WorkloadLogicService.ts) aggregates current target issues.
 
-ペインの表示時や範囲・クエリ・設定の変更時に、`GET /projects/:project_id/canvas_gantt/actual_workload.json` を呼ぶ。`from` と `to` は実在する `YYYY-MM-DD` で、両端を含め最大 730 日。逆順、形式不正、範囲超過は 422。`leaf_only=1` で物理的末端のみ、`include_closed=1` で終了チケットを含める。
+1. Require an assignee, positive estimated hours, and valid start/due dates. Exclude issues whose start is after due date.
+2. Apply leaf-only, closed-issue, and today-onward settings. Use each issue's project calendar to find working days in the inclusive start-to-due range.
+3. Allocate `estimated hours / total working days` evenly across working days. The denominator includes all working days before clipping to the viewport or today-onward filter, so partial display does not change daily allocation. No working days means no allocation.
+4. Sum allocations by person/day and retain period totals, peaks, and per-issue contributions.
 
-サーバーはガントのクエリ解決と `Issue.visible` で対象チケットを限定し、さらに `TimeEntry.visible(current_user)` を適用する。対象期間の作業時間をユーザー、日付、チケット単位で SQL 集計し、行数と応答サイズの予算を検査する。集計行は `id`、`issueId`、`userId`、`userName`、`spentOn`、`hours` を持つ。生の作業時間エントリー一覧ではない。
+For example, ten estimated hours across five Monday–Friday working days gives two hours per day. Displaying only Wednesday–Friday totals six hours; it does not redistribute ten hours over three days. Treat dates as calendar dates, without timezone conversion to instants.
 
-応答形式は `{ "entries": [...] }` で、各 `id` は `userId:spentOn:issueId` の合成値。実績集計の対象範囲は可視な作業時間と可視な対象チケットの両方の積集合であり、閲覧できないチケットに属する記録を含めない。
+<a id="実績の取得と計算"></a>
 
-SPA は受信行を現在の対象チケットと照合し、不正な日付、非正値、不明なチケットを除外する。実績は休日を含む記録日そのものに加算し、予定のように営業日に配分しない。予定と実績はそれぞれ日別合計、期間合計、ピーク、寄与チケットを保持する。
+## Actual effort retrieval and calculation
 
-## 過負荷と操作
+Opening the pane or changing scope, query, or settings calls `GET /projects/:project_id/canvas_gantt/actual_workload.json`. `from` and `to` must be real `YYYY-MM-DD` dates with an inclusive span of at most 730 days. Reversed ranges, invalid formats, or excessive spans return 422. `leaf_only=1` selects physical leaves; `include_closed=1` includes closed issues.
 
-予定・実績それぞれの日別合計が閾値を**超えた**場合に過負荷とする。閾値と同じ値は過負荷ではない。過負荷の日数と、過負荷日を持つ担当者数をそれぞれ集計する。
+The server restricts target issues using Gantt query resolution and `Issue.visible`, then applies `TimeEntry.visible(current_user)`. SQL aggregates time within the period by user/date/issue, with row-count and response-size budgets. Aggregated rows contain `id`, `issueId`, `userId`, `userName`, `spentOn`, and `hours`; they are not raw time-entry records.
 
-ヒストグラムの棒から寄与するチケットへ移動でき、同じ棒に複数チケットがある場合は繰り返し操作で巡回する。過負荷の棒も担当者ごとに巡回できる。工数ペインの縦スクロールはサイドバーと同期する。
+The response is `{ "entries": [...] }`, with each `id` composed as `userId:spentOn:issueId`. Actual scope intersects visible time entries and visible target issues; records for inaccessible issues are excluded.
 
-## 非同期処理とエラー
+The SPA matches rows to current target issues and excludes invalid dates, non-positive values, and unknown issues. Actual hours accumulate on their recorded dates, including holidays, rather than being distributed across working days. Planned and actual effort each retain daily totals, period totals, peaks, and contributing issues.
 
-[WorkloadStore](../../spa/src/stores/WorkloadStore.ts) は現在のプロジェクト、解決済みクエリとコンテキスト、期間、末端・終了設定を実績範囲のキーにする。範囲が変わると以前の範囲の実績を消し、同じ範囲の再取得時には前回の結果を保持できる。再取得は 150 ms 遅延でまとめる。
+<a id="過負荷と操作"></a>
 
-要求世代、現在の範囲キー、ペイン表示状態を照合し、古い応答を反映しない。ペインを閉じると保留された取得や計算を無効化する。実績取得が失敗すると `error` 状態になり、失敗を空の実績として成功扱いしない。予定工数の計算は取得とは独立している。
+## Overload and interaction
 
-実績状態は `idle`、`loading`、`ready`、`error`。同じキーの取得失敗時は保持済みの値が残り得るため、値の存在だけで最新の取得成功を意味しない。キーが変わった際は旧範囲を表示に混ぜない。キャッシュはストア内の現在範囲の値であり、複数範囲の履歴キャッシュや永続的な実績保管ではない。
+A planned or actual daily total is overloaded only when it **exceeds** the threshold; equality is not overload. Count overloaded days and people with overloaded days separately.
 
-## 実装、検証、制約
+Histogram bars can focus contributing issues; repeated actions cycle through multiple contributors to the same bar. Overload bars also support cycling by person. Workload-pane vertical scrolling stays synchronized with the sidebar.
 
-- [コントローラー](../../app/controllers/canvas_gantts_controller.rb)、[実績集計](../../lib/redmine_canvas_gantt/actual_workload_builder.rb)、[SPA ストア](../../spa/src/stores/WorkloadStore.ts)、[計算](../../spa/src/services/WorkloadLogicService.ts)、[描画](../../spa/src/components/workload/WorkloadCanvasPanel.tsx)。
-- [実績 API テスト](../../spec/controllers/canvas_gantts_actual_workload_spec.rb)、[計算テスト](../../spa/src/services/WorkloadLogicService.test.ts)、[表示テスト](../../spa/src/components/workload/WorkloadCanvasPanel.test.tsx)、[Redmine E2E](../../spa/tests/e2e-redmine/workload-pane.pw.ts)。
-- 実績は現在の可視性・現在のクエリ範囲で再集計され、過去時点の所属や権限を復元する履歴レポートではない。データ量が予算を超えた場合は無制限に返さずエラーになる。
+<a id="非同期処理とエラー"></a>
+
+## Asynchronous behavior and errors
+
+[WorkloadStore](../../spa/src/stores/WorkloadStore.ts) keys actual scope by current project, resolved query/context, period, and leaf/closed settings. Scope changes clear previous actual results; refetching the same scope may retain the last result. Refetches are debounced by 150 ms.
+
+Responses must match request generation, current scope key, and pane visibility. Stale responses are ignored. Closing the pane invalidates pending fetches/calculations. Actual retrieval failures enter `error`; failure must not become a successful empty result. Planned calculation is independent of fetching.
+
+Actual states are `idle`, `loading`, `ready`, and `error`. A failed request for the same key may leave retained values, so their presence alone does not indicate the latest fetch succeeded. A changed key must not mix in old-scope data. The cache holds the current scope in store; it is not a multi-scope historical cache or persistent archive of actual effort.
+
+<a id="実装検証制約"></a>
+
+## Implementation, verification, and limitations
+
+- [Controller](../../app/controllers/canvas_gantts_controller.rb), [actual aggregation](../../lib/redmine_canvas_gantt/actual_workload_builder.rb), [SPA store](../../spa/src/stores/WorkloadStore.ts), [calculation](../../spa/src/services/WorkloadLogicService.ts), [rendering](../../spa/src/components/workload/WorkloadCanvasPanel.tsx).
+- [Actual API tests](../../spec/controllers/canvas_gantts_actual_workload_spec.rb), [calculation tests](../../spa/src/services/WorkloadLogicService.test.ts), [display tests](../../spa/src/components/workload/WorkloadCanvasPanel.test.tsx), [Redmine E2E](../../spa/tests/e2e-redmine/workload-pane.pw.ts).
+- Actual effort is reaggregated under current visibility and query scope. It does not reconstruct historical memberships or permissions. Exceeding data budgets returns an error rather than unlimited results.

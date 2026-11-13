@@ -1,94 +1,110 @@
-# 全体構成・共通契約
+<a id="全体構成共通契約"></a>
 
-確認日: 2026-11-13。基準: `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`（コード上の 0.20.0）。公開マニュアル v0.19.0 との関係は [仕様書の入口](../README.md) を参照。
+# Architecture and Shared Contracts
 
-## 目的と責務
+Reviewed: 2026-11-13. Reference: `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22` (code version 0.20.0). See the [specification index](../README.md) for the public manual's target version.
 
-Redmine の可視チケットを Canvas のタイムラインと React の一覧・操作パネルで表示する Rails プラグインである。サーバーが権限・可視性・永続化・親日付の導出を担い、SPA が表示、ローカル編集、プレビュー、保存操作の進行を管理する。
+<a id="目的と責務"></a>
 
-| 層 | 責務 | 主要実装 |
+## Purpose and responsibilities
+
+This Rails plugin displays visible Redmine issues on a Canvas timeline with a React issue list and controls. The server owns authorization, visibility, persistence, and derived parent dates. The SPA manages display, local edits, previews, and save progress.
+
+| Layer | Responsibilities | Main implementation |
 | --- | --- | --- |
-| Rails の画面・API | 起動設定、認証、HTTP、表示範囲と権限の検査 | [controller](../../app/controllers/canvas_gantts_controller.rb)、[routes](../../config/routes.rb) |
-| Ruby の機能サービス | 抽出、編集評価、日程更新、カレンダー、ベースライン、実績集計 | [lib](../../lib/redmine_canvas_gantt/) |
-| API クライアント | URL・ヘッダー、JSON の検査、日付と ID の変換、エラー分類 | [client](../../spa/src/api/client.ts)、[mutationDecoders](../../spa/src/api/mutationDecoders.ts) |
-| 状態・サービス | サーバー状態、ドラフト、読込世代、保存・競合・回復 | [stores](../../spa/src/stores/)、[services](../../spa/src/services/) |
-| 表示・入力・出力 | React の操作 UI、Canvas 描画、入力解釈、エクスポート | [components](../../spa/src/components/)、[engines](../../spa/src/engines/)、[export](../../spa/src/export/) |
+| Rails pages and APIs | Bootstrap configuration, authentication, HTTP, scope and permission checks | [controller](../../app/controllers/canvas_gantts_controller.rb), [routes](../../config/routes.rb) |
+| Ruby feature services | Selection, draft evaluation, schedule updates, calendars, baselines, actual effort aggregation | [lib](../../lib/redmine_canvas_gantt/) |
+| API client | URLs and headers, JSON validation, date and ID conversion, error classification | [client](../../spa/src/api/client.ts), [mutationDecoders](../../spa/src/api/mutationDecoders.ts) |
+| State and services | Server state, drafts, load generations, saving, conflicts, recovery | [stores](../../spa/src/stores/), [services](../../spa/src/services/) |
+| Display, input, and output | React controls, Canvas rendering, input interpretation, exports | [components](../../spa/src/components/), [engines](../../spa/src/engines/), [export](../../spa/src/export/) |
 
-## 起動と取得
+<a id="起動と取得"></a>
 
-1. プロジェクトの Canvas Gantt 画面を開くと、controller が表示権限を確認して画面を返す。
-2. [Rails view](../../app/views/canvas_gantts/index.html.erb) が `window.RedmineCanvasGantt` を生成する。プロジェクト ID、プロジェクト・Issue・API のパス、Redmine のサブパス、CSRF トークン、翻訳、固定設定、非稼働曜日、ユーザー ID、言語・日付形式を含む。
-3. Vite の manifest に従ってビルド済み JS／CSS を読み込み、[main](../../spa/src/main.tsx) が React アプリをマウントする。開発サーバー使用条件は [実行環境](permissions-settings.md) に定義する。
-4. データ取得ではサーバーが表示範囲、Issue の可視性、フィルター・保存クエリを解決し、表示に必要な状態を返す。クライアントは応答を変換・検証して既存 store の経路から反映する。
+## Bootstrap and loading
 
-初期 HTML の設定は表示対象の全 Issue データではない。データ・編集候補・ワークロード等はそれぞれの API と状態管理を通して取得する。
+1. Opening a project's Canvas Gantt page makes the controller check view permission and return the page.
+2. The [Rails view](../../app/views/canvas_gantts/index.html.erb) creates `window.RedmineCanvasGantt`. It includes the project ID, project/issue/API paths, Redmine subpath, CSRF token, translations, fixed settings, non-working weekdays, user ID, language, and date format.
+3. Built JS/CSS loads according to the Vite manifest, and [main](../../spa/src/main.tsx) mounts React. Conditions for using the development server are defined in [runtime settings](permissions-settings.md).
+4. For data requests, the server resolves project scope, issue visibility, filters, and saved queries and returns display state. The client converts and validates the response and applies it through existing store paths.
 
-## API の境界
+The initial HTML configuration is not the complete issue dataset. Data, edit options, workload, and other resources load through their respective APIs and state management.
 
-プロジェクト側の基本パスは `/projects/:project_id/canvas_gantt`。SPA の更新系は `/canvas_gantt` 側のルートも利用し、その場合は `canvas_project_id` で画面のプロジェクトを指定する。Redmine をサブパスに配置したときは、その接頭辞を保つ。
+<a id="api-の境界"></a>
 
-| 機能 | HTTP と相対パス | 契約の所有先 |
+## API boundaries
+
+The project base path is `/projects/:project_id/canvas_gantt`. SPA mutations also use routes under `/canvas_gantt`, specifying the view's project with `canvas_project_id`. Preserve Redmine's subpath prefix when deployed under a relative URL root.
+
+| Feature | HTTP and relative path | Contract owner |
 | --- | --- | --- |
-| 画面、データ、クエリ一覧 | `GET` 画面、`/data`、`/queries` | [表示範囲・クエリ](query-scope.md) |
-| 編集候補とプレビュー | `GET /tasks/:id/edit_meta`、`POST /tasks/:id/edit_meta/preview` | [チケット編集](issue-editing.md) |
-| Issue 更新・削除 | `PATCH`／`DELETE /tasks/:id` | [チケット編集](issue-editing.md)、[保存](persistence.md) |
-| 日程更新と関連 | `POST /schedule_mutation`、`POST /relations`、`PATCH`／`DELETE /relations/:id` | [日程変更](scheduling.md) |
-| 子 Issue 作成候補と一括作成 | `GET /subtasks/trackers`、`POST /subtasks/bulk` | [子チケット](bulk-subtasks.md) |
-| ベースライン | `POST`／`DELETE /baseline`（プロジェクト側のみ） | [ベースライン](baseline.md) |
-| 実績ワークロード | `GET /actual_workload`（プロジェクト側のみ） | [ワークロード](workload.md) |
+| Page, data, query list | `GET` page, `/data`, `/queries` | [Scope and queries](query-scope.md) |
+| Edit options and preview | `GET /tasks/:id/edit_meta`, `POST /tasks/:id/edit_meta/preview` | [Issue editing](issue-editing.md) |
+| Issue update and deletion | `PATCH` / `DELETE /tasks/:id` | [Issue editing](issue-editing.md), [persistence](persistence.md) |
+| Schedule updates and relations | `POST /schedule_mutation`, `POST /relations`, `PATCH` / `DELETE /relations/:id` | [Scheduling](scheduling.md) |
+| Child issue tracker options and bulk creation | `GET /subtasks/trackers`, `POST /subtasks/bulk` | [Child issues](bulk-subtasks.md) |
+| Baselines | `POST` / `DELETE /baseline` (project routes only) | [Baselines](baseline.md) |
+| Actual workload | `GET /actual_workload` (project routes only) | [Workload](workload.md) |
 
-JSON の主要応答には `tasks`、`relations`、`versions`、`custom_fields`、`filter_options`、`statuses`、`project`、`permissions`、`initial_state`、`query_context`、`baseline`、`warnings`、`project_scope` がある。`baseline` 等の nil 値や空の `warnings` は省略され得る。カレンダー情報の wire キーは `businessCalendar` である。API クライアントが snake_case 等を SPA の型へ変換するため、wire のキーと store のプロパティ名を同一視しない。
+Main JSON response fields include `tasks`, `relations`, `versions`, `custom_fields`, `filter_options`, `statuses`, `project`, `permissions`, `initial_state`, `query_context`, `baseline`, `warnings`, and `project_scope`. Nil values such as `baseline` and empty `warnings` may be omitted. The calendar wire key is `businessCalendar`. The API client converts snake_case and other wire representations to SPA types; wire keys and store property names are not interchangeable.
 
-更新要求は CSRF トークンを付け、カレンダー revision が取得済みならそのヘッダーも送る。サーバーはカレンダー依存の要求について、ヘッダーがある場合に revision を比較する。未指定の要求を一律に拒否する契約ではない。表示範囲と操作対象の検査はサーバーで行い、クライアントの表示・編集可否だけを信用しない。
+Mutations include a CSRF token and, when available, a calendar revision header. For calendar-dependent requests, the server compares revisions if the header is present. This does not mean all requests without the header are rejected. Scope and target checks belong on the server; client display and editability alone are not trusted.
 
-## 日付の共通契約
+<a id="日付の共通契約"></a>
 
-[dateOnly](../../spa/src/utils/dateOnly.ts) を暦日計算と変換の所有先とする。
+## Shared date contract
 
-| 型・表現 | 意味 | 境界 |
+[dateOnly](../../spa/src/utils/dateOnly.ts) owns calendar-date calculations and conversions.
+
+| Type or representation | Meaning | Boundary |
 | --- | --- | --- |
-| `YYYY-MM-DD` | Redmine の日付だけの値 | API／カレンダー／保存 |
-| `CalendarDate` | UTC 午前0時の数値で符号化した暦日 | タイムゾーン非依存の計算 |
-| `TimelineDate` | Canvas の一定幅の日付軸 | `toTimelineDate`／`timelineToCalendarDate` |
-| `Instant` | 経過時間上の時刻 | タイマー等。暦日と直接混ぜない |
+| `YYYY-MM-DD` | Redmine date-only value | APIs, calendars, persistence |
+| `CalendarDate` | Calendar date encoded as a UTC-midnight number | Timezone-independent calculation |
+| `TimelineDate` | Canvas date axis with uniform day widths | `toTimelineDate` / `timelineToCalendarDate` |
+| `Instant` | A point on the elapsed-time axis | Timers and similar features; do not mix directly with calendar dates |
 
-- `parseDateOnly` は日付形式と実在する年月日を検証し、不正値・空値は `null` にする。
-- `formatDateOnly` は UTC の年月日から日付文字列を生成する。UTC 符号化をローカル時刻として表示しない。
-- 日付差と加減算は `diffCalendarDays`／`addCalendarDays` 等を使う。DST による一日の実時間の長さを暦日差へ持ち込まない。
-- 日付ピッカー・ローカライズ表示の境界は `toLocalDisplayDate`／`fromLocalDate`、今日の境界は `todayCalendarDate` を使う。
-- `new Date('YYYY-MM-DD')` や `toISOString()` を date-only の独自変換として追加しない。
+- `parseDateOnly` validates the format and actual year/month/day; invalid or empty values become `null`.
+- `formatDateOnly` generates a date string from UTC date components. Do not display the UTC encoding as local time.
+- Use `diffCalendarDays`, `addCalendarDays`, and related utilities for date differences and arithmetic. DST changes to elapsed day length must not affect calendar-day differences.
+- Use `toLocalDisplayDate` / `fromLocalDate` at date-picker and localized display boundaries, and `todayCalendarDate` for today.
+- Do not add independent date-only conversions using `new Date('YYYY-MM-DD')` or `toISOString()`.
 
-営業日、後続タスクのカレンダー、日付配置モードは [カレンダー](calendars.md) と [日程変更](scheduling.md) に定義する。
+Working days, successor calendars, and date placement modes are defined in [calendars](calendars.md) and [scheduling](scheduling.md).
 
-## 保存・非同期処理の共通契約
+<a id="保存非同期処理の共通契約"></a>
 
-- サーバー由来の確定状態とローカルパッチを分離し、表示はその投影とする。保存モデルの正本は [保存・競合回復](persistence.md)。
-- 更新の成否、確定データの完全性、revision、無効化対象を解釈して状態を収束させる。HTTP が成功しただけでローカル編集を消去しない。
-- 読込世代、画面コンテキスト、Issue／操作の revision を保護する。古い画面、失効した要求、後続の編集より古い応答で現在の状態を上書きしない。
-- 通常データ、編集メタ情報、ベースライン、実績データにはそれぞれ取得境界がある。横断した直接 store 書換えや別の保存パイプラインを追加しない。
-- 派生する親 Issue の日付は Redmine が決める。クライアントが子の投影から親の日付更新を合成して送らない。
+## Shared persistence and asynchronous contracts
 
-[async contract checker](../../spa/scripts/check-async-contract.mjs) は既存の境界を静的に確認する。機能ごとの競合・回復テストと併用する。
+- Separate confirmed server state from local patches; display their projection. [Persistence and conflict recovery](persistence.md) owns the persistence model.
+- Reconcile state using mutation outcomes, completeness of confirmed data, revisions, and invalidation targets. HTTP success alone must not clear local edits.
+- Protect load generations, view context, and issue/operation revisions. Responses for old views, superseded requests, or earlier edits must not overwrite current state.
+- Main data, edit metadata, baselines, and actual workload each have their own loading boundaries. Do not add direct cross-store writes or a competing save pipeline.
+- Redmine owns derived parent issue dates. Do not synthesize parent date mutations from projected children.
 
-## データ量と失敗
+The [async contract checker](../../spa/scripts/check-async-contract.mjs) statically checks existing boundaries. Use it alongside feature-specific conflict and recovery tests.
 
-[DataPayloadBudget](../../lib/redmine_canvas_gantt/data_payload_budget.rb) がデータ取得の件数と JSON バイト数を制限する。
+<a id="データ量と失敗"></a>
 
-| 環境変数 | 既定値兼上限 |
+## Data budgets and failures
+
+[DataPayloadBudget](../../lib/redmine_canvas_gantt/data_payload_budget.rb) limits record counts and JSON bytes for data retrieval.
+
+| Environment variable | Default and maximum |
 | --- | --- |
 | `REDMINE_CANVAS_GANTT_MAX_DATA_ISSUES` | 10,000 |
 | `REDMINE_CANVAS_GANTT_MAX_DATA_RELATIONS` | 50,000 |
 | `REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS` | 10,000 |
 | `REDMINE_CANVAS_GANTT_MAX_DATA_BYTES` | 25 × 1024 × 1024 bytes |
 
-正の整数の設定値は上限までに制限する。不正値・非正数は既定値へ戻す。`load_records` を使う取得では上限+1件まで読み、超過を判定する。他のコレクションには構築後に件数を検査する経路もあり、すべての読込が上限+1件に制限されるわけではない。JSON サイズも検査する。超過時は `413` と `code: canvas_gantt_payload_limit`、`resource`、`limit` を返す。上限は動作速度の保証や全 API 共通のページング仕様ではない。
+Positive integer settings are capped at the maximum. Invalid or non-positive values fall back to defaults. Retrieval using `load_records` reads at most limit + 1 records to detect overflow. Other collection paths check counts after construction; not every load is bounded to limit + 1 records. JSON size is also checked. Overflow returns `413` with `code: canvas_gantt_payload_limit`, `resource`, and `limit`. These limits do not guarantee performance or define pagination across all APIs.
 
-権限不足・対象消失・競合・入力不正・通信障害は区別する。各 API の詳細は機能仕様、更新失敗の分類と回復は [保存仕様](persistence.md) に従う。機密情報を通知やログへ転記しない。
+Distinguish permission denial, missing targets, conflicts, invalid input, and transport failures. Feature specifications define API details; [persistence](persistence.md) defines mutation failure classification and recovery. Do not copy sensitive information into notifications or logs.
 
-## 根拠と回帰確認
+<a id="根拠と回帰確認"></a>
 
-- 日付: [dateOnly.test](../../spa/src/utils/dateOnly.test.ts)。今日・表示境界とタイマーの実時刻を区別し、Asia/Tokyo と America/Los_Angeles／DST を意識する。
-- API の変換: [client.test](../../spa/src/api/client.test.ts)、[mutationDecoders.test](../../spa/src/api/mutationDecoders.test.ts)。
-- 件数・サイズ: [data_payload_budget_spec](../../spec/lib/redmine_canvas_gantt/data_payload_budget_spec.rb)、[controller spec](../../spec/controllers/canvas_gantts_controller_spec.rb)。
-- 起動・画面境界: [App.test](../../spa/src/App.test.tsx)、[アセット helper spec](../../spec/lib/redmine_canvas_gantt/vite_asset_helper_spec.rb)。
-- 実行コマンドと前提条件は [AGENTS.md](../../AGENTS.md) と [CI](../../.github/workflows/ci.yml) を参照する。ここに示す根拠はコード・テストの読解であり、全対応 Redmine 上の統合検証を代替しない。
+## Evidence and regression checks
+
+- Dates: [dateOnly.test](../../spa/src/utils/dateOnly.test.ts). Distinguish today/display boundaries from timer instants; consider Asia/Tokyo and America/Los_Angeles/DST.
+- API conversion: [client.test](../../spa/src/api/client.test.ts), [mutationDecoders.test](../../spa/src/api/mutationDecoders.test.ts).
+- Counts and size: [data_payload_budget_spec](../../spec/lib/redmine_canvas_gantt/data_payload_budget_spec.rb), [controller spec](../../spec/controllers/canvas_gantts_controller_spec.rb).
+- Bootstrap and view boundaries: [App.test](../../spa/src/App.test.tsx), [asset helper spec](../../spec/lib/redmine_canvas_gantt/vite_asset_helper_spec.rb).
+- Commands and prerequisites are in [AGENTS.md](../../AGENTS.md) and [CI](../../.github/workflows/ci.yml). This evidence comes from reading code and tests; it does not replace integration verification on every supported Redmine version.

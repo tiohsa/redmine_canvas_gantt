@@ -1,43 +1,55 @@
-# ベースラインの現行仕様
+<a id="ベースラインの現行仕様"></a>
 
-対象: HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`、2026-11-13 時点の実装（プラグイン 0.20.0）。公開マニュアルの対象は v0.19.0 であり、本書は開発中の実装を記述する。
+# Baselines
 
-## 目的とデータ
+Reference: HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`, implementation as of 2026-11-13 (plugin 0.20.0). This document describes the development reference; the specification index identifies the public manual's current target.
 
-ベースラインは保存時のチケットの開始日・期日を記録し、現在のガント上の日付と比較する。履歴を複数世代保存する機能ではなく、対象プロジェクトごとに 1 件を保持し、再保存で置換する。タスクの更新経路は [永続化](persistence.md)、対象の選択は [クエリと範囲](query-scope.md)を参照。
+<a id="目的とデータ"></a>
 
-`BaselineSnapshot` のメタデータは `snapshot_id`、`project_id`、UTC の `captured_at`、`captured_by_id`、`captured_by_name`、`scope`。各チケットは ID と `baseline_start_date`、`baseline_due_date` のみを保持し、日付は欠損し得る。API はチケット ID をキーにした `tasks_by_issue_id` を返す。チケット名、担当者、進捗、見積時間などの履歴は保存しない。
+## Purpose and data
 
-## 作成と表示
+A baseline records issue start/due dates at capture time for comparison with current Gantt dates. It does not retain multiple historical generations: each target project holds one snapshot, replaced on the next save. See [persistence](persistence.md) for task updates and [queries and scope](query-scope.md) for target selection.
 
-1. `POST /projects/:project_id/canvas_gantt/baseline.json` は `manage_canvas_gantt_baseline` の権限を確認する。
-2. `scope` は `filtered` または `project`。省略時は `filtered`、その他の値はエラー。
-3. `filtered` は現在のクエリ解決結果を保存する。`project` は対象プロジェクトと子孫の可視チケットをクエリのフィルターによらず取得する。いずれも取得件数の上限に従う。
-4. サーバー上のチケットの日付から新しい ID と取得時刻を生成し、プロジェクトの既存スナップショットを置換する。クエリの警告も応答に含まれ得る。
-5. 通常のガントデータ取得時にはスナップショットを読み、現在のユーザーに可視で対象プロジェクト範囲内のチケットだけを含めて返す。元の保存内容をこの読み出しで変更しない。
+`BaselineSnapshot` metadata includes `snapshot_id`, `project_id`, UTC `captured_at`, `captured_by_id`, `captured_by_name`, and `scope`. Each issue retains only its ID, `baseline_start_date`, and `baseline_due_date`; dates may be absent. The API returns `tasks_by_issue_id`, keyed by issue ID. Subjects, assignees, progress, estimated hours, and similar history are not stored.
 
-保存先はプラグイン設定の `baseline_snapshots`。設定行をロックしたトランザクションで置換・削除し、設定キャッシュを更新する。メモリー設定など DB ロックを利用しない場合はプロセス内 mutex を使用する。
+<a id="作成と表示"></a>
 
-保存ハッシュではプロジェクト ID の文字列をキーにし、メタデータと `task_states` 配列を格納する。各配列要素は `issue_id`、`baseline_start_date`、`baseline_due_date`。読み出しは旧形式の `task_states` ハッシュや `tasks_by_issue_id` ハッシュも受け付け、`scope` 欠損時は `filtered` と解釈する。保存形式に独立した schema version フィールドはない。
+## Creation and display
 
-`snapshot_id` は UUID として新規保存ごとに作られる識別子で、各チケットの `lock_version` とは別物。作成・置換は以前の ID を期待値として検証しないため、並行した保存は後に完了した置換が残る。一方、削除は下記のとおり期待 ID を検証する。保存時には未保存の SPA draft をスナップショットとして直接送信せず、サーバーのチケットを取得する。
+1. `POST /projects/:project_id/canvas_gantt/baseline.json` checks `manage_canvas_gantt_baseline` permission.
+2. `scope` is `filtered` or `project`; omission defaults to `filtered`, and other values are errors.
+3. `filtered` captures the current resolved query. `project` loads visible issues in the target project and descendants regardless of query filters. Both obey retrieval limits.
+4. Generate a new ID and capture time from server issue dates and replace the project's existing snapshot. The response may include query warnings.
+5. Normal Gantt data loading reads the snapshot and returns only issues visible to the current user and within target project scope. This read does not modify the stored snapshot.
 
-SPA の [BaselineStore](../../spa/src/stores/BaselineStore.ts) はスナップショット、警告、保存・削除状態とエラーを保持する。表示切替と比較は保存内容を変更しない。保存対象外や新規チケットには対応するベースラインがない。
+Snapshots are stored in plugin setting `baseline_snapshots`. Replacement/deletion runs in a transaction locking the settings row and updates the settings cache. An in-process mutex is used when DB locking is unavailable, such as in-memory settings.
 
-## 比較
+The stored hash uses string project IDs as keys, with metadata and a `task_states` array. Each element contains `issue_id`, `baseline_start_date`, and `baseline_due_date`. Reads also accept legacy `task_states` hashes and `tasks_by_issue_id` hashes; a missing `scope` means `filtered`. There is no independent schema-version field in the storage format.
 
-[比較計算](../../spa/src/utils/baseline.ts)は現在と保存時の開始・期日の差を暦日で計算する。両端がある期間は両端を含み最小 1 日、片端のみでも 1 日、両端がない場合は期間なし。両方の値がある場合に開始差、期日差、期間差を算出し、欠けた値は差なしの数値に置き換えない。開始または期日の欠損状態が異なる場合も差分として扱う。営業日数の差ではない。
+`snapshot_id` is a UUID generated for each new save, separate from issue `lock_version`. Creation/replacement does not validate an expected previous ID, so the replacement completing last wins concurrent saves. Deletion validates the expected ID as described below. Saving loads server issues rather than directly submitting unsaved SPA drafts as a snapshot.
 
-## 削除と失敗
+The SPA [BaselineStore](../../spa/src/stores/BaselineStore.ts) holds the snapshot, warnings, save/delete states, and errors. Toggling display or comparison does not change storage. Issues outside the capture scope and new issues have no matching baseline.
 
-`DELETE /projects/:project_id/canvas_gantt/baseline.json` も管理権限を要し、観測した `snapshot_id` を渡す。ロック内で現在の ID と比較し、一致時のみ削除する。ID 不正は 422、対象なしは 404、他の操作による置換後の古い ID は 409 で、クライアントに再取得を促す。成功応答は `baseline: null` と `deleted_snapshot_id` を含む。古い削除要求が新しいスナップショットを消すことはない。
+<a id="比較"></a>
 
-保存データの必須メタデータ不備やプロジェクト ID 不一致は警告とともにスナップショットを返さない。個々の無効なチケット状態も検証され、警告が返される。通信や権限、ペイロード上限のエラーは成功として扱わない。
+## Comparison
 
-無効な issue ID や解析できない日付を持つチケット状態は除外して残りを読み、警告を返す。scope が不正などスナップショット全体の構築に失敗した場合はスナップショットを返さない。現在の可視性によりフィルタリングされた結果は、保存時の対象数と異なり得る。
+[Comparison calculations](../../spa/src/utils/baseline.ts) use calendar-day differences between current and captured start/due dates. A range with both endpoints is inclusive with a minimum of one day; one endpoint also means one day; neither means no duration. Start, due, and duration differences are calculated when both compared values exist; missing values are not replaced with numeric zero differences. Different missingness of start or due dates also counts as a difference. These are not working-day differences.
 
-## 実装と検証
+<a id="削除と失敗"></a>
 
-- [リポジトリ](../../lib/redmine_canvas_gantt/baseline_repository.rb)、[スナップショット](../../lib/redmine_canvas_gantt/baseline_snapshot.rb)、[チケット状態](../../lib/redmine_canvas_gantt/baseline_task_state.rb)、[コントローラー](../../app/controllers/canvas_gantts_controller.rb)。
-- [リポジトリテスト](../../spec/lib/redmine_canvas_gantt/baseline_repository_spec.rb)、[モデルテスト](../../spec/lib/redmine_canvas_gantt/baseline_snapshot_spec.rb)、[比較テスト](../../spa/src/utils/baseline.test.ts)、[権限 E2E](../../spa/tests/e2e-redmine/baseline-permissions.pw.ts)、[削除ダイアログ E2E](../../spa/tests/e2e/dialog-settings-baseline-delete.pw.ts)。
-- プロジェクトごとに 1 件なので、置換や削除から過去の状態を復元する機能はない。現在の可視性に応じて返るチケット数は変わる。
+## Deletion and failures
+
+`DELETE /projects/:project_id/canvas_gantt/baseline.json` also requires management permission and the observed `snapshot_id`. Compare it with the current ID under lock and delete only on a match. Invalid IDs return 422, missing snapshots 404, and stale IDs after replacement by another operation 409, prompting a refetch. Success includes `baseline: null` and `deleted_snapshot_id`. A stale deletion cannot remove a newer snapshot.
+
+Missing required stored metadata or a project-ID mismatch returns no snapshot and produces warnings. Individual invalid task states are also validated and reported through warnings. Transport, permission, and payload-limit errors are not successes.
+
+Task states with invalid issue IDs or unparseable dates are omitted while the remainder loads with warnings. A failure constructing the entire snapshot, such as invalid scope, returns no snapshot. Filtering by current visibility can produce a different issue count from capture time.
+
+<a id="実装と検証"></a>
+
+## Implementation and verification
+
+- [Repository](../../lib/redmine_canvas_gantt/baseline_repository.rb), [snapshot](../../lib/redmine_canvas_gantt/baseline_snapshot.rb), [task state](../../lib/redmine_canvas_gantt/baseline_task_state.rb), [controller](../../app/controllers/canvas_gantts_controller.rb).
+- [Repository tests](../../spec/lib/redmine_canvas_gantt/baseline_repository_spec.rb), [model tests](../../spec/lib/redmine_canvas_gantt/baseline_snapshot_spec.rb), [comparison tests](../../spa/src/utils/baseline.test.ts), [permission E2E](../../spa/tests/e2e-redmine/baseline-permissions.pw.ts), [delete dialog E2E](../../spa/tests/e2e/dialog-settings-baseline-delete.pw.ts).
+- Because each project holds one snapshot, replacement/deletion provides no restoration of earlier snapshots. Returned issue counts vary with current visibility.

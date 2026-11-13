@@ -1,40 +1,50 @@
-# 表示設定とエクスポート仕様
+<a id="表示設定とエクスポート仕様"></a>
 
-対象: 開発 HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22`（2026-11-13、コード 0.20.0）。公開マニュアルの対象は v0.19.0。本書は開発時点の実装を記録する。
+# Display Settings and Export
 
-## 表示と既定値
+Reference: development HEAD `d1d910fd0a0ea6f02d34d78fa68f1e3abe61cb22` (2026-11-13, code 0.20.0). This document records that development implementation; see the specification index for the public manual's current target.
 
-一覧とチャートは標準表示、一覧最大化、チャート最大化を切り替えられる。両ペインを同時に隠さない。ズーム、日・週・月表示、行高、フォント、列の表示・順序・幅、サイドバー幅、チケットダイアログの寸法を変更できる。初期表示は週、ズーム 1、行高はブラウザー保存値がなければ controller の固定 `row_height` 値 36、フォント 13、サイドバー幅 400。行高選択肢は 20、28、36、44、52、フォントは 11、13、15 px。現行の `row_height` は管理画面で設定する値ではない。固定設定と権限の詳細は [権限・設定](permissions-settings.md) を参照。
+<a id="表示と既定値"></a>
 
-保存値がない場合、進捗ライン・バー上の日付・ベースラインはオフ、タスク名・階層線・片方の日付のみを持つタスク点はオン。開始日のみと期日のみは個別に切り替えられる。クリティカルパスの計算は既定で有効で、無効にするとその計算・通知を停止するが依存関係の自動スケジュールは別である。バージョン、依存関係順、表示列、トラッカーアイコンなども設定できる。
+## Display and defaults
 
-チケットダイアログは幅 900 / 1200 / 1500 px、既定 1200 px。高さは自動または固定割合、既定は自動で固定時の初期値は 80%。全画面は既定オフ。表示サイズは画面内に制限される。設定対象はチケットの表示・編集・作成などで、作業時間とクエリのダイアログは対象外。
+The list/chart layout supports standard display, maximized list, and maximized chart; both panes cannot be hidden together. Users can change zoom, day/week/month scale, row height, font, column visibility/order/width, sidebar width, and issue-dialog dimensions. Initial display is weekly, zoom 1, font 13, sidebar width 400, and row height 36 from the controller's fixed `row_height` when no browser preference exists. Row-height options are 20, 28, 36, 44, and 52; font options are 11, 13, and 15 px. Current `row_height` is not an administrator-configurable value. See [permissions and settings](permissions-settings.md) for fixed settings and permission details.
 
-## 保存範囲と優先順位
+Without stored values, progress lines, bar dates, and baselines are off; task names, hierarchy lines, and markers for tasks with only one date are on. Start-only and due-only markers can be toggled independently. Critical-path calculation is enabled by default; disabling it stops its calculations/notifications, independently of automatic dependency scheduling. Versions, dependency ordering, columns, tracker icons, and other display options are also configurable.
 
-[preferences.ts](../../spa/src/utils/preferences.ts) は `canvasGantt:preferences` の localStorage envelope に表示設定を保持する。プロジェクト別と全プロジェクト共通の表示設定があり、共通を有効にすると共通設定を使用する。切り替え時は現在の表示設定を選択先に保存する。共通とは同じブラウザープロファイル内のことで、Redmine のユーザー設定や他ユーザー・端末への配布ではない。サイトデータ削除で消える。
+Issue-dialog widths are 900 / 1200 / 1500 px, default 1200 px. Height is automatic or a fixed percentage, default automatic with an initial fixed value of 80%. Fullscreen defaults to off. Dimensions are constrained to the viewport. These preferences apply to issue viewing/editing/creation and similar dialogs, excluding time-entry and query dialogs.
 
-ズーム・ビューポート、表示フラグ、表示列と幅、行高・フォント、ダイアログサイズ、依存関係順、auto-save、クリティカルパスなどが表示設定の対象。関係や日付配置に関する一般設定も同じ envelope で別に保持される。クエリが明示する列はクエリの文脈で適用され、通常の表示設定と区別する。フィルターの共有は Redmine クエリや URL の契約であり、このブラウザー内設定とは別である。
+<a id="保存範囲と優先順位"></a>
 
-保存値は読み取り時に検証・正規化する。変更は [preferencesWatcher.ts](../../spa/src/stores/preferencesWatcher.ts) が監視する。auto-save の有効化には未保存の変更を先に保存する既存の遷移があり、失敗時に完了扱いしない。
+## Storage scope and precedence
 
-## 出力
+[preferences.ts](../../spa/src/utils/preferences.ts) stores display preferences in the `canvasGantt:preferences` localStorage envelope. Both per-project and shared cross-project display preferences exist. Enabling shared preferences uses that set; switching saves current display preferences to the selected destination. “Shared” means within the same browser profile, not Redmine user settings or distribution to other users/devices. Clearing site data removes them.
 
-チャートペインを表示している場合、ツールバーから現在画面の PNG、全体 PNG、CSV を選ぶ。ブラウザーで生成しダウンロードする。
+Display preferences cover zoom/viewport, display flags, visible columns and widths, row height/font, dialog dimensions, dependency ordering, auto-save, critical paths, and similar options. General relation/date-placement preferences are stored separately within the same envelope. Query-specified columns apply in query context, separately from ordinary display preferences. Sharing filters follows Redmine query/URL contracts, not these browser-local settings.
 
-| 形式 | 対象と制限 |
+Stored values are validated and normalized when read. [preferencesWatcher.ts](../../spa/src/stores/preferencesWatcher.ts) watches changes. Enabling auto-save follows the existing transition that saves pending changes first; a failure does not complete that transition.
+
+<a id="出力"></a>
+
+## Export
+
+When the chart pane is visible, the toolbar offers current-view PNG, full PNG, and CSV, generated and downloaded in the browser.
+
+| Format | Scope and limits |
 | --- | --- |
-| PNG | 現在のチャートのヘッダー・背景・ベースライン・タスク・オーバーレイを合成する。画像寸法は画面の device pixel ratio ではなく論理ピクセルに基づく。 |
-| 全体 PNG | 現在のフィルター・順序・折りたたみ・ズーム・行高に基づく全表示行と期間。表示中のラベルやベースラインを含む。サイドバー、ワークロード、選択・ホバーは含まない。各辺 8192 px、総画素 16,777,216 の上限を超えると失敗する。 |
-| CSV | 表示対象タスク、親子情報、前後関係、カスタムフィールドを出力する。日付は日付のみの形式、数値は数値として出力する。 |
+| PNG | Composites current chart headers, background, baselines, tasks, and overlays. Dimensions use logical pixels, not screen device pixel ratio. |
+| Full PNG | All displayed rows and date range according to current filters, order, collapse state, zoom, and row height. Includes visible labels/baselines; excludes sidebar, workload, selection, and hover. Fails beyond 8192 px per side or 16,777,216 total pixels. |
+| CSV | Exports displayed tasks, hierarchy, predecessor/successor information, and custom fields. Dates use date-only format; numbers are exported as numbers. |
 
-CSV の固定列は ID、件名、親 ID・件名、階層、子の有無、プロジェクト、トラッカー、ステータス、担当者、開始日、期日、進捗、優先度、作成者、カテゴリ、予定・実績時間、バージョン、先行・後続。カスタムフィールド列を続ける。参照先が対象外の関係には関係種別を使用する。
+Fixed CSV columns cover ID, subject, parent ID/subject, hierarchy, child presence, project, tracker, status, assignee, start/due dates, progress, priority, author, category, estimated/spent hours, version, predecessors, and successors, followed by custom-field columns. Relations referencing targets outside the export scope use the relation type.
 
-CSV のテキストが数式として解釈され得る先頭文字を持つ場合、引用セル内にタブを付ける。これはデータを変更する対策であり、すべての表計算ソフトや取り込み経路での安全を保証しない。引用符、カンマ、改行も CSV としてエスケープする。
+Text starting with characters that could be interpreted as spreadsheet formulas gets a tab inside the quoted cell. This modifies exported data and does not guarantee safety in every spreadsheet application or import path. Quotes, commas, and newlines are also CSV-escaped.
 
-## 実装と確認先
+<a id="実装と確認先"></a>
 
-- [表示 UI](../../spa/src/components/DisplaySettingsControls.tsx)、[UIStore](../../spa/src/stores/UIStore.ts)、[TaskStore](../../spa/src/stores/TaskStore.ts)、[設定のテスト](../../spa/src/utils/preferences.test.ts)
-- [現在 PNG](../../spa/src/export/png.ts)、[全体 PNG](../../spa/src/export/fullPng.ts)、[CSV](../../spa/src/export/csv.ts)、[CSV テスト](../../spa/src/export/csv.test.ts)、[全体 PNG テスト](../../spa/src/export/fullPng.test.ts)
-- [表示 E2E](../../spa/tests/e2e/gantt-display.pw.ts)、[出力 E2E](../../spa/tests/e2e/gantt-export.pw.ts)、[公開マニュアル v0.19.0](../../website/ja/features/display-export.md)
-- これらは根拠への参照であり、今回テストを実行したという意味ではない。
+## Implementation and verification references
+
+- [Display UI](../../spa/src/components/DisplaySettingsControls.tsx), [UIStore](../../spa/src/stores/UIStore.ts), [TaskStore](../../spa/src/stores/TaskStore.ts), [preference tests](../../spa/src/utils/preferences.test.ts)
+- [Current PNG](../../spa/src/export/png.ts), [full PNG](../../spa/src/export/fullPng.ts), [CSV](../../spa/src/export/csv.ts), [CSV tests](../../spa/src/export/csv.test.ts), [full PNG tests](../../spa/src/export/fullPng.test.ts)
+- [Display E2E](../../spa/tests/e2e/gantt-display.pw.ts), [export E2E](../../spa/tests/e2e/gantt-export.pw.ts), [public manual](../../website/ja/features/display-export.md)
+- These references provide supporting evidence; they do not mean those tests were run during this update.
