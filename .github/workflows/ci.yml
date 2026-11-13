@@ -153,7 +153,8 @@ jobs:
       - build
       - lint
       - test
-    runs-on: ubuntu-latest
+    # Pin the OS to keep Playwright browser/dependency installation supported.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -200,7 +201,8 @@ jobs:
     needs:
       - lint
       - test
-    runs-on: ubuntu-latest
+    # Pin the OS to keep Playwright browser/dependency installation supported.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -256,7 +258,8 @@ jobs:
       - build
       - lint
       - test
-    runs-on: ubuntu-latest
+    # Pin the OS to keep Playwright browser/dependency installation supported.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
